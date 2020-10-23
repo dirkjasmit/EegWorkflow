@@ -1,5 +1,9 @@
 # EegWorkflow
-MATLAB/EEGLAB-based workflow for (automated) preprocessing of EEG data
+MATLAB/EEGLAB-based workflow for (automated) preprocessing of EEG data. Currently imports:
+- EEGLAB .set
+- ANT .cnt
+- Brainvison analyzer
+- Neuroscan .cnt files
 
 Tested on Mac OS and Linux, not windows. MATLAB GUIs are notoriously sensitive to screen settings, so
 you might have to adjust this to get visible buttons.
@@ -10,7 +14,7 @@ INSTALLATION
   - clean rawdata
   - ICLabel
   - AAR
-  - ...
+  - ANTImport (when reading ANT files)
 - Download the EegWorkflow unzip into a folder. 
 - Start by:
   - adding eeglab_2020_0 to the path
