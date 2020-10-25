@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 24-Oct-2020 10:34:31
+% Last Modified by GUIDE v2.5 25-Oct-2020 12:36:20
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -1857,3 +1857,12 @@ function checkboxKeepOther_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 % Hint: get(hObject,'Value') returns toggle state of checkboxKeepOther
+
+
+% --- Executes during object creation, after setting all properties.
+function checkboxBurstDelete_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to checkboxBurstDelete (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+pause(1)
