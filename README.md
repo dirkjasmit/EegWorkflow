@@ -10,12 +10,12 @@ you might have to adjust this to get visible buttons.
 
 INSTALLATION
 - Install EEGLAB version 2020_0 (see https://github.com/sccn/eeglab)
-- Run, and install the following plugins from the 'file -- manage extensions' menu
+- Run, and install the following plugins from the 'file -- manage extensions' menu (Note: if you are behind a firewall you may need to visit https://sccn.ucsd.edu/wiki/EEGLAB_Extensions to download and instructions how to install the plugins manually.)
   - clean rawdata
   - ICLabel
   - AAR
   - ANTImport (when reading ANT files)
-- Download the EegWorkflow unzip into a folder. 
+- Download the EegWorkflow and unzip into a folder. 
 - Start by:
   - running EegAutoflow.m
   - adding eeglab_2020_0 to the path (The EegWorkflow will popup a window for this)
