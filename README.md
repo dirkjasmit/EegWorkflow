@@ -17,9 +17,10 @@ INSTALLATION
   - ANTImport (when reading ANT files)
 - Download the EegWorkflow unzip into a folder. 
 - Start by:
-  - adding eeglab_2020_0 to the path
-  - run EegAutoflow.m
+  - running EegAutoflow.m
+  - adding eeglab_2020_0 to the path (The EegWorkflow will popup a window for this)
   - click 'change folder' if it pops up
   
-  
+REQUIRED
+Requires the signal processing toolbox
 
