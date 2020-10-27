@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 25-Oct-2020 12:36:20
+% Last Modified by GUIDE v2.5 27-Oct-2020 09:17:07
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -62,17 +62,28 @@ guidata(hObject, handles);
 % UIWAIT makes guiEegAutoflow wait for user response (see UIRESUME)
 % uiwait(handles.fig_eeg_workflow);
 
-if ~exist('ALLEEG')
-    eeglab;
-end
-
 data = guidata(hObject);
 
+if ~exist('ALLEEG')
+    try
+        eeglab;
+    catch E
+        AddToListbox(data.listboxStdout, '* warning * cannot find EEGLAB. Please locate.')
+        data.listboxStdout;
+        if strcmpi(E.identifier,'MATLAB:UndefinedFunction')
+            filepath = uigetdir();
+            addpath(filepath)
+            eeglab;
+        end
+    end
+end
+
+AddToListbox(data.listboxStdout, 'trying to load a sample file.')
 filename = '/Volumes/FiveTB/Documents/Onderzoeksmap/Misofonie_ArjenSchroder/EEG/EEG_misophonia_MMN/C004/C004.cnt';
 try
     data.EEG = pop_loadeep_v4(filename);
 catch
-    pause(1);
+    AddToListbox(data.listboxStdout, '* warning * loading sample file failed.')
 end
 
 guidata(hObject, data);
@@ -80,7 +91,26 @@ guidata(hObject, data);
 % The timerFcn is called after the window becomes visible.
 %function timerFcn(obj,event,arg1)
 
+function AddToListbox(listboxObject, str)
 
+old = listboxObject.String;
+new = str;
+oldsize = size(old);
+newsize = size(str);
+if newsize(2)>oldsize(2)
+    old = [old repmat(' ',oldsize(1),newsize(2)-oldsize(2))];
+elseif newsize(2)<oldsize(2)
+    new = [new repmat(' ',1,oldsize(2)-newsize(2))];
+end
+listboxObject.String = cat(1,old,new);
+nlines = size(listboxObject.String,1);
+if length(nlines)>100
+    listboxObject.String = listboxObject.String(2:end,:);
+end
+
+listboxObject.Value = size(listboxObject.String,1);
+
+pause(0.005);
 
 
 % --- Outputs from this function are returned to the command line.
@@ -97,16 +127,6 @@ pause(0.05);
 
 
 
-% --- Executes on button press in pb1.
-function pb1_Callback(hObject, eventdata, handles)
-% hObject    handle to pb1 (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-
-
-
-
 
 % --- Executes on button press in pbOpen.
 function pushbuttonOpen_Callback(hObject, eventdata, handles)
@@ -118,10 +138,10 @@ data = guidata(hObject);
 hObject.BackgroundColor = [.3 .6 .3];
 
 FilterSpec = {
-    '*.cnt','ANT continuous w/ trig';
-    '*.cnt','Neuroscan continuous';
+    '*.cnt', 'ANT continuous w/ trig';
     '*.set', 'EEGLAB continuous'  ;
-    '*.eeg', 'EEGLAB epoched'     ;
+    '*.cnt', 'Neuroscan continuous';
+    '*.eeg', 'Neuroscan epoched'     ;
     '*.bdf', 'Biosemi'            };
 DefaultPath = '/Users/dirksmit/OneDrive/Transfer';
 [FileName,PathName,FilterIndex] = uigetfile(FilterSpec,'Select an EEG file', DefaultPath);
@@ -163,40 +183,47 @@ switch FilterIndex
             dummy.latency = ndx;
             dummy.duration = 0;
             tmp.event = cat(1,dummy,tmp.event(:));
-        end
-        
+        end        
         data.EEG = tmp;
+        AddToListbox(data.listboxStdout, 'Read ANT CNT file')
         
     case 2
-        data.EEG = pop_loadcnt([PathName FileName]);
-        data.EEG.filename = [PathName FileName];
-    
-    case 3
         data.EEG = pop_loadset([PathName FileName]);
         data.EEG.filename = [PathName FileName];
+        AddToListbox(data.listboxStdout, 'Read EEGLAB file')
+
+    case 3
+        data.EEG = pop_loadcnt([PathName FileName]);
+        data.EEG.filename = [PathName FileName];
+        AddToListbox(data.listboxStdout, 'Read Neuroscan CNT file')
+    
     
     case 4
         data.EEG = pop_loadeeg([PathName FileName]);
         data.EEG.filename = [PathName FileName];
+        AddToListbox(data.listboxStdout, 'Read Neuroscan EEG file')
     
     case 5
         data.EEG = pop_readbdf([PathName FileName], [] , [],1);
         data.EEG.filename = Filename;
+        AddToListbox(data.listboxStdout, 'Read BDF file')
         
 end
 %catch E
 %    throw(E)
 %end
 
-data.EEG = eeg_checkset(data.EEG);
-if isfield(data.EEG,'event')
-    for ev=1:length(data.EEG.event)
-        if ischar(data.EEG.event(ev).type)
-            data.EEG.event(ev).type = data.EEG.event(ev).type(~ismember(data.EEG.event(ev).type,[0 9:13 32]));
-        end
-    end
-end
 
+data.EEG = eeg_checkset(data.EEG);
+%if isfield(data.EEG,'event')
+%    for ev=1:length(data.EEG.event)
+%        if ischar(data.EEG.event(ev).type)
+%            data.EEG.event(ev).type = data.EEG.event(ev).type(~ismember(data.EEG.event(ev).type,[0 9:13 32]));
+%        end
+%    end
+%end
+
+% make all button red (except the next one)
 list = fieldnames(data);
 for l=1:length(list)
     if isfield(getfield(data,list{l}),'style')
@@ -211,34 +238,7 @@ data.pushbuttonFlatline.BackgroundColor = [.6 1 .6];
 hObject.BackgroundColor = [1 .6 .6];
 
 guidata(hObject,data)
-listboxEegProperties_Update(hObject)
 
-
-
-
-% --- Executes on selection change in listboxEegProperties.
-function listboxEegProperties_Callback(hObject, eventdata, handles)
-% hObject    handle to listboxEegProperties (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-% Hints: contents = cellstr(get(hObject,'String')) returns listboxEegProperties contents as cell array
-%        contents{get(hObject,'Value')} returns selected item from listboxEegProperties
-
-
-
-
-% --- Executes during object creation, after setting all properties.
-function listboxEegProperties_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to listboxEegProperties (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
-
-% Hint: listbox controls usually have a white background on Windows.
-%       See ISPC and COMPUTER.
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
 
 
 
@@ -260,7 +260,10 @@ if ~isfield(data,'EEG')
     return
 end
 
+AddToListbox(data.listboxStdout, 'Reading channel locations.');
+
 if data.checkboxAddCPz.Value && sum(strcmpi({data.EEG.chanlocs.labels},'CPz'))==0
+    AddToListbox(data.listboxStdout, ' Adding CPz channel as flatline.');
     data.EEG.data(end+1,:) = 0;
     data.EEG.nbchan = data.EEG.nbchan+1;
     data.EEG.chanlocs(end+1).labels = 'CPz';
@@ -272,8 +275,11 @@ end
 if sum(strcmpi('pz',{data.EEG.chanlocs.labels})) || sum(strcmpi('fp1',{data.EEG.chanlocs.labels}))
     pause(.005);
 else
+    AddToListbox(data.listboxStdout, ' * warning * Cannot find Pz and Fp1 channels. Assuming channel labels are not 10/10 nomenclature.');
+    AddToListbox(data.listboxStdout, '             Only 10/10 names are supported for now.');
     warning('Cannot find Pz and Fp1 channels. Assuming channel labels are not 10/10 nomenclature.\nOnly 10/10 is supported for now.')
 end
+AddToListbox(data.listboxStdout, ' Looking up channels in standard-10-5-cap385.elp.');
 data.EEG = pop_chanedit(data.EEG, 'lookup','standard-10-5-cap385.elp');
 
 guidata(hObject,data)
@@ -281,9 +287,6 @@ listboxEegProperties_Update(hObject)
 
 set(hObject, 'BackgroundColor', [.9 .8 .5]);
 data.pushbuttonResample.BackgroundColor = [.6 1 .6];
-
-
-
 
 
 
@@ -305,14 +308,18 @@ end
 
 
 if data.radiobuttonFIR.Value
-    data.EEG = filter_fir(data.EEG, data.EEG.srate, data.sliderLow.Value, data.sliderHigh.Value, 3.0, true, false, true);
+    AddToListbox(data.listboxStdout, 'Applying FIR filter while observing transition band.');
+    data.EEG = filter_fir(data.EEG, data.EEG.srate, data.sliderLow.Value, data.sliderHigh.Value, 3.0, true, false, false);
     if data.chbxNotch.Value
+        AddToListbox(data.listboxStdout, ' Notch FIR filter 47 to 53 Hz');
         data.EEG = filter_fir(data.EEG, data.EEG.srate, 47, 53, 3.0, true, true);
     end
 else
-    data.EEG = filter_butter(data.EEG, data.EEG.srate, data.sliderLow.Value, data.sliderHigh.Value, [], true, false, true);
+    AddToListbox(data.listboxStdout, ' Applying 3rd order Butterworth IIR filter (zerophase)');
+    data.EEG = filter_butter(data.EEG, data.EEG.srate, data.sliderLow.Value, data.sliderHigh.Value, 3, true, false, false);
     if data.chbxNotch.Value
-        data.EEG = filter_butter(data.EEG, data.EEG.srate, 47, 53, 6, true, true);
+        AddToListbox(data.listboxStdout, ' Notch FIR filter 47 to 53 Hz');
+        data.EEG = filter_butter(data.EEG, data.EEG.srate, 47, 53, 3, true, true);
     end
 end
 
@@ -1465,7 +1472,9 @@ if ~isfield(data,'EEG') || isempty(data.EEG.data)
     return
 end
 
+AddToListbox(data.listboxStdout, 'Removing cannels with <0.1 stdev.');
 
+% get very low StdDev for channels
 SD = std(data.EEG.data(:,:)');
 ndx = find(SD<.1);
 if ~isempty(ndx)
@@ -1489,6 +1498,7 @@ data.pushbuttonFilter.BackgroundColor = [.3 .6 .3];
 pause(0.005)
 
 if ~isfield(data,'EEG') || isempty(data.EEG.data)
+    AddToListbox(data.listboxStdout,'*** error *** No EEG data avilable');
     msgbox('No data available');
     data.pushbuttonFilter.BackgroundColor = [1 .6 .6];
     return
@@ -1496,14 +1506,17 @@ end
 
 
 if data.radiobuttonFIR.Value
+    AddToListbox(data.listboxStdout,'Filtering with FIR filter.');    
     data.EEG = pop_eegfiltnew(data.EEG, data.sliderLow.Value, data.sliderHigh.Value, [], false);
     if data.checkboxNotch.Value
+        AddToListbox(data.listboxStdout,'Notch filter 47 to 53 Hz.');    
         data.EEG = pop_eegfiltnew(data.EEG, 47, 53, [], true);
     end
 else
-    data.EEG = filter_butter(data.EEG, data.EEG.srate, data.sliderLow.Value, data.sliderHigh.Value, [], true, false, true);
+    AddToListbox(data.listboxStdout,'Filtering with 2nd order Butterworth');    
+    data.EEG = filter_butter(data.EEG, data.EEG.srate, data.sliderLow.Value, data.sliderHigh.Value, 9, true, false, true);
     if data.checkboxNotch.Value
-        data.EEG = filter_butter(data.EEG, data.EEG.srate, 47, 53, 6, true, true);
+        data.EEG = filter_butter(data.EEG, data.EEG.srate, 47, 53, 2, true, true);
     end
 end
 
@@ -1540,81 +1553,6 @@ guidata(hObject,data);
 
 
 
-% --- Executes on button press in pushbuttonSegment.
-function pushbuttonSegment_Callback(hObject, eventdata, handles)
-% hObject    handle to pushbuttonSegment (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-data = guidata(hObject);
-if isempty(data.EEG.event)
-    fprintf('No segments (no boudary events). Only single segment will be available.\n')
-    data.nsegments = 1;
-else
-    data.pushbuttonSegment.BackgroundColor = [.3 .6 .3];
-    pause(0.005);
-
-    data.nsegments = sum(strcmpi({data.EEG.event.type},'boundary'))+1;
-    if data.nsegments>1
-        data.popupmenuSegments.String = {'Single segment'};
-        ndx = strcmpi({data.EEG.event.type},'boundary');
-        cut = [1 data.EEG.event(ndx).latency data.EEG.pnts+1];
-        for seg=1:data.nsegments
-            data.segment(seg).EEG = data.EEG;
-            data.segment(seg).EEG.data = data.EEG.data(:,cut(seg):cut(seg+1)-1);
-            data.segment(seg).EEG.pnts = size(data.segment(seg).EEG.data,2);
-            del = [];
-            for ev=1:length(data.segment(seg).EEG.event)
-                if data.segment(seg).EEG.event(ev).latency>=cut(seg)&&data.segment(seg).EEG.event(ev).latency<cut(seg+1)
-                    data.segment(seg).EEG.event(ev).latency = data.segment(seg).EEG.event(ev).latency - cut(seg) + 1;
-                else
-                    del = [del ev];
-                end
-            end
-            if ~isempty(del)
-                data.segment(seg).EEG = pop_editeventvals(data.segment(seg).EEG, 'delete', del);
-            end
-            data.segment(seg).EEG = eeg_checkset(data.segment(seg).EEG);
-            data.segment(seg).bad = [];
-            data.segment(seg).cut = [];
-
-            % gui adjustement (popup menu)
-            data.popupmenuSegments.String = [data.popupmenuSegments.String ; {sprintf('Segment %d',seg)}];
-        end
-        % default popup menu to first segment
-        data.popupmenuSegments.Value = 2;
-    end
-end
-
-data.pushbuttonBadChans.BackgroundColor = [1 .6 .6];
-data.pushbuttonSegment.BackgroundColor = [1 .6 .6];
-guidata(hObject,data);
-
-
-% --- Executes on selection change in listboxProgress.
-function listboxProgress_Callback(hObject, eventdata, handles)
-% hObject    handle to listboxProgress (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-% Hints: contents = cellstr(get(hObject,'String')) returns listboxProgress contents as cell array
-%        contents{get(hObject,'Value')} returns selected item from listboxProgress
-
-
-% --- Executes during object creation, after setting all properties.
-function listboxProgress_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to listboxProgress (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
-
-% Hint: listbox controls usually have a white background on Windows.
-%       See ISPC and COMPUTER.
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
-
-
-
 % --- Executes on button press in pushbuttonReref.
 function pushbuttonReref_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbuttonReref (see GCBO)
@@ -1624,6 +1562,7 @@ function pushbuttonReref_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 set(hObject, 'BackgroundColor', [.3 .6 .3]);
 pause(.005);
+
 
 tmp = data.EEG;
 if size(tmp.data,3) ~= tmp.trials
@@ -1638,6 +1577,8 @@ if ~isfield(data,'EEG') || isempty(data.EEG.data)
     data.pushbuttonReref.BackgroundColor = [.6 1 .6];
     return
 end
+
+AddToListbox(data.listboxStdout, sprintf('Rereferencing data (%s)',data.popupmenuReref.String{data.popupmenuReref.Value}));
 
 switch data.popupmenuReref.Value
     case 1, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),'CPZ')));
@@ -1692,23 +1633,28 @@ data = guidata(hObject);
 set(hObject,'backgroundcolor',[.3 .6 .3])
 pause(0.005);
 
+AddToListbox(data.listboxStdout, 'Running intial ICA of 16 PCs');
+
 data.EEG.data = detrend(data.EEG.data','constant')';
 tmp = pop_runica(data.EEG,'icatype','binica','pca',16);
 % this works out: the reconstructed data from full ICA decomposition
 % results in a resuidual (all ICs above number 16). Determine the eye ICs,
-% remove the IC data by subtracting the source data. Then add back the
-% residual. Noise will be removed later.
+% remove the IC data by subtracting the source data.
+
+% resid = (tmp.icawinv*tmp.icaact - tmp.data);
 
 if isempty(tmp.icaact)
+    AddToListbox(data.listboxStdout, ' Recalculate ICA activations.');
     tmp.icaact = icaact(tmp.data, tmp.icaweights*tmp.icasphere);
 end
-resid = (tmp.icawinv*tmp.icaact - tmp.data);
+
+AddToListbox(data.listboxStdout, ' Get eye PCs using ICLabel.');
 
 % determine eye ICs
 tmp = pop_iclabel(tmp, 'default');
 eyelabel = FindSetNdx(tmp.etc.ic_classification.ICLabel.classes,'Eye');
 icdeselect = (tmp.etc.ic_classification.ICLabel.classifications(:,eyelabel)')'>.60;
-fprintf('Removing %d eye components\n',sum(icdeselect));
+AddToListbox(data.listboxStdout, sprintf(' Removing %d ICs',sum(icdeselect)));
 if sum(icdeselect)>0
     data.EEG.data = data.EEG.data - tmp.icawinv(:,icdeselect)*tmp.icaact(icdeselect,:);
 end
@@ -1727,6 +1673,8 @@ function pushbuttonClean_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 set(hObject,'backgroundcolor',[.3 .6 .3])
 pause(0.005);
+
+AddToListbox(data.listboxStdout, 'Clean data usig clean_rawdata');
 
 data.EEG = pop_clean_rawdata(data.EEG, 'FlatlineCriterion','off','ChannelCriterion','off','LineNoiseCriterion','off','Highpass','off',...
     'BurstCriterion',data.sliderBurstCriterion.Value,...
@@ -1749,6 +1697,8 @@ function pushbuttonAAR_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 set(hObject,'backgroundcolor',[.3 .6 .3])
 pause(0.005);
+
+AddToListbox(data.listboxStdout, 'Clean data of muscle actvit using AAR in 40s windows.');
 
 data.EEG = pop_autobssemg(data.EEG, 40, 40, 'bsscca', {'eigratio', [1000000]}, 'emg_psd', {'ratio', [10],'fs', [256],'femg', [15],'estimator',spectrum.welch,'range', [0  34]});
 
@@ -1866,3 +1816,26 @@ function checkboxBurstDelete_CreateFcn(hObject, eventdata, handles)
 % handles    empty - handles not created until after all CreateFcns called
 
 pause(1)
+
+
+% --- Executes on selection change in listboxStdout.
+function listboxStdout_Callback(hObject, eventdata, handles)
+% hObject    handle to listboxStdout (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: contents = cellstr(get(hObject,'String')) returns listboxStdout contents as cell array
+%        contents{get(hObject,'Value')} returns selected item from listboxStdout
+
+
+% --- Executes during object creation, after setting all properties.
+function listboxStdout_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to listboxStdout (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: listbox controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
