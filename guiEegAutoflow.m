@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 27-Oct-2020 09:17:07
+% Last Modified by GUIDE v2.5 28-Oct-2020 14:57:43
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -86,10 +86,17 @@ catch
     AddToListbox(data.listboxStdout, '* warning * loading sample file failed.')
 end
 
+% set the values of the uicontrols
+strlist = readtable(sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text');
+SetUIControlData(hObject, strlist);
+
+
 guidata(hObject, data);
 
-% The timerFcn is called after the window becomes visible.
-%function timerFcn(obj,event,arg1)
+
+
+
+
 
 function AddToListbox(listboxObject, str)
 
@@ -137,17 +144,26 @@ function pushbuttonOpen_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 hObject.BackgroundColor = [.3 .6 .3];
 
-FilterSpec = {
-    '*.cnt', 'ANT continuous w/ trig';
-    '*.set', 'EEGLAB continuous'  ;
-    '*.cnt', 'Neuroscan continuous';
-    '*.eeg', 'Neuroscan epoched'     ;
-    '*.bdf', 'Biosemi'            };
-DefaultPath = '/Users/dirksmit/OneDrive/Transfer';
+FilterSpec = {'*.*', 'All files'};
+fid = fopen('.EegWorkflow_DefaultPath.ini','r');
+DefaultPath = "."
+if fid>0
+    try
+        DefaultPath = fgetl(fid);
+        fclose(fid);
+    catch
+    end
+end 
 [FileName,PathName,FilterIndex] = uigetfile(FilterSpec,'Select an EEG file', DefaultPath);
+fid = fopen('.EegWorkflow_DefaultPath.ini','w');
+if fid>0
+    fprintf(fid,'%s',PathName);
+    fclose(fid);
+end 
+
 %try
-switch FilterIndex
-    case 1
+switch FileName(end-3:end)
+    case '.cnt'
         data.EEG = pop_loadeep_v4([PathName FileName], 'triggerfile', 'on');
         data.EEG.filename = [PathName FileName];
         tmp = data.EEG;
@@ -187,32 +203,21 @@ switch FilterIndex
         data.EEG = tmp;
         AddToListbox(data.listboxStdout, 'Read ANT CNT file')
         
-    case 2
+    case '.set'
         data.EEG = pop_loadset([PathName FileName]);
         data.EEG.filename = [PathName FileName];
         AddToListbox(data.listboxStdout, 'Read EEGLAB file')
 
-    case 3
-        data.EEG = pop_loadcnt([PathName FileName]);
-        data.EEG.filename = [PathName FileName];
-        AddToListbox(data.listboxStdout, 'Read Neuroscan CNT file')
-    
-    
-    case 4
-        data.EEG = pop_loadeeg([PathName FileName]);
-        data.EEG.filename = [PathName FileName];
-        AddToListbox(data.listboxStdout, 'Read Neuroscan EEG file')
-    
-    case 5
-        data.EEG = pop_readbdf([PathName FileName], [] , [],1);
-        data.EEG.filename = Filename;
+    case '.bdf'
+        data.EEG = pop_readbdf([PathName FileName], [] , [], []);
+        data.EEG.filename = FileName;
         AddToListbox(data.listboxStdout, 'Read BDF file')
+        AddToListbox(data.listboxStdout, '* Warning * no reference channel selected. Must rereference to lose 40dB of noise.')
         
 end
 %catch E
 %    throw(E)
 %end
-
 
 data.EEG = eeg_checkset(data.EEG);
 %if isfield(data.EEG,'event')
@@ -262,29 +267,36 @@ end
 
 AddToListbox(data.listboxStdout, 'Reading channel locations.');
 
-if data.checkboxAddCPz.Value && sum(strcmpi({data.EEG.chanlocs.labels},'CPz'))==0
-    AddToListbox(data.listboxStdout, ' Adding CPz channel as flatline.');
+if data.checkboxAddAFz.Value && sum(strcmpi({data.EEG.chanlocs.labels},'CPz'))==0
+    AddToListbox(data.listboxStdout, ' - Adding AFz channel as flatline.');
     data.EEG.data(end+1,:) = 0;
     data.EEG.nbchan = data.EEG.nbchan+1;
-    data.EEG.chanlocs(end+1).labels = 'CPz';
+    data.EEG.chanlocs(end+1).labels = 'AFz';
+    AddToListbox(data.listboxStdout, ' - Removing ICA decomposition.');
     data.EEG.icaweights = [];
     data.EEG.icawinv = [];
     data.EEG.icasphere = [];
+    data.EEG = eeg_checkset(data.EEG);
 end
 
-if sum(strcmpi('pz',{data.EEG.chanlocs.labels})) || sum(strcmpi('fp1',{data.EEG.chanlocs.labels}))
-    pause(.005);
-else
-    AddToListbox(data.listboxStdout, ' * warning * Cannot find Pz and Fp1 channels. Assuming channel labels are not 10/10 nomenclature.');
-    AddToListbox(data.listboxStdout, '             Only 10/10 names are supported for now.');
-    warning('Cannot find Pz and Fp1 channels. Assuming channel labels are not 10/10 nomenclature.\nOnly 10/10 is supported for now.')
+switch data.popupmenuLookupType.Value
+    case 1
+        AddToListbox(data.listboxStdout, ' - Looking up channels in standard-10-5-cap385.elp.');
+        data.EEG = pop_chanedit(data.EEG, 'lookup','standard-10-5-cap385.elp');
+    case 2
+        AddToListbox(data.listboxStdout, ' - Renaming to 10/10 and looking up channels in standard-10-5-cap385.elp.');
+        labs = readtable('BioSemi68_labels.txt');
+        [data.EEG.chanlocs.labels] = deal(labs);
+        data.EEG = pop_chanedit(data.EEG, 'lookup','standard-10-5-cap385.elp');
+    case 3
+        AddToListbox(data.listboxStdout, ' - Looking up channel locations from 128 channel EEGLAB dataset.');
+        tmp = pop_loadset('Biosemi128.set');
+        data.EEG.chanlocs(1:128) = tmp.chanlocs;
 end
-AddToListbox(data.listboxStdout, ' Looking up channels in standard-10-5-cap385.elp.');
-data.EEG = pop_chanedit(data.EEG, 'lookup','standard-10-5-cap385.elp');
 
 guidata(hObject,data)
-listboxEegProperties_Update(hObject)
 
+listboxEegProperties_Update(hObject)
 set(hObject, 'BackgroundColor', [.9 .8 .5]);
 data.pushbuttonResample.BackgroundColor = [.6 1 .6];
 
@@ -1054,22 +1066,78 @@ function fig_eeg_workflow_CloseRequestFcn(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 % Hint: delete(hObject) closes the figure
-data = guidata(hObject);
-try
-    hWindow = findall(arg1,'tag',sprintf('figRejectViewer_%d',data.hWindowCounter));
-    if ~isempty(hWindow)
-        close(hWindow);
-    end
-catch
-end
 
-try
-    stop(data.ViewSegmentTimer);
-    delete(data.ViewSegmentTimer);
-catch
-end
+data = guidata(hObject);
+
+% save all the settings
+
+strlist = GetUIControlData(hObject);
+writetable(strlist,sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text')
 
 delete(hObject);
+
+
+% pass a handle to the gui, and it will extract all the UIControl object
+% data (slider, checkbox value and edit strings).
+function strlist = GetUIControlData(hObject)
+
+strlist = struct;
+
+ch = get(hObject,'ch');
+count = 0;
+for c=1:length(ch)
+    if strcmpi(get(ch(c),'Type'),'uicontrol')
+        skip=false;
+        switch get(ch(c),'Style')
+            case 'edit'
+                tmp1 = sprintf('%s',get(ch(c),'tag'));
+                tmp2 = sprintf('%s',get(ch(c),'string'));
+            case {'checkbox','slider','popupmenu'}
+                tmp1 = sprintf('%s',get(ch(c),'tag'));
+                tmp2 = sprintf('%.4f',get(ch(c),'value'));
+            otherwise
+                skip=true;
+        end
+        if ~skip
+            count = count + 1;
+            strlist(count).key = tmp1;
+            strlist(count).val = tmp2;
+        end
+    end
+end             
+
+strlist = struct2table(strlist);
+
+% 
+function SetUIControlData(hObject, strlist)
+
+ch = get(hObject,'ch');
+for c=1:length(ch)
+    if strcmpi(get(ch(c),'Type'),'uicontrol')
+        switch get(ch(c),'Style')
+            
+            case 'edit'
+                ndx = find(strcmpi(strlist.key, get(ch(c),'tag')));
+                if length(ndx)==1
+                    if isnumeric(strlist.val)
+                        set(ch(c),'string', sprintf('%.4f', strlist.val(ndx)));
+                    else
+                        set(ch(c),'string', sprintf('%s', strlist.val{ndx}));
+                    end
+                end
+                
+            case {'checkbox','slider','popupmenu'}
+                ndx = find(strcmpi(strlist.key, get(ch(c),'tag')));
+                if length(ndx)==1
+                    if isnumeric(strlist.val)
+                        set(ch(c),'value', strlist.val(ndx));
+                    else
+                        set(ch(c),'value', double(strlist.val{ndx}));
+                    end
+                end
+        end
+    end
+end             
 
 
 
@@ -1595,13 +1663,13 @@ pause(0.005);
 
 
 
-% --- Executes on button press in checkboxAddCPz.
-function checkboxAddCPz_Callback(hObject, eventdata, handles)
-% hObject    handle to checkboxAddCPz (see GCBO)
+% --- Executes on button press in checkboxAddAFz.
+function checkboxAddAFz_Callback(hObject, eventdata, handles)
+% hObject    handle to checkboxAddAFz (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% Hint: get(hObject,'Value') returns toggle state of checkboxAddCPz
+% Hint: get(hObject,'Value') returns toggle state of checkboxAddAFz
 
 
 % --- Executes on button press in checkbox11.
@@ -1653,9 +1721,11 @@ AddToListbox(data.listboxStdout, ' Get eye PCs using ICLabel.');
 % determine eye ICs
 tmp = pop_iclabel(tmp, 'default');
 eyelabel = FindSetNdx(tmp.etc.ic_classification.ICLabel.classes,'Eye');
-icdeselect = (tmp.etc.ic_classification.ICLabel.classifications(:,eyelabel)')'>.60;
+icdeselect = (tmp.etc.ic_classification.ICLabel.classifications(:,eyelabel)')'>.50;
 AddToListbox(data.listboxStdout, sprintf(' Removing %d ICs',sum(icdeselect)));
 if sum(icdeselect)>0
+    AddToListbox(data.listboxStdout, sprintf(' - Remove %d eye ICs',sum(icdeselect)));
+    fprintf(' - Remove %d eye ICs\n',sum(icdeselect));
     data.EEG.data = data.EEG.data - tmp.icawinv(:,icdeselect)*tmp.icaact(icdeselect,:);
 end
 
@@ -1839,3 +1909,92 @@ function listboxStdout_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+
+% --- Executes on button press in pushbuttonUseSource.
+function pushbuttonUseSource_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonUseSource (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+h = figMatchChannels(gcf, @figUseSource_Callback);
+uiwait(h);
+
+data.pushbuttonUseSource.BackgroundColor = [.9 .8 .6];
+data.pushbuttonChanlocs.BackgroundColor = [.9 .8 .6];
+data.pbFilter.BackgroundColor = [.6 1 .6];
+
+guidata(hObject, data);
+
+function figUseSource_Callback(hObject)
+
+data = guidata(hObject);
+data_parent = guidata(data.Parent);
+data_parent.EEG = data.EEG;
+
+
+function editOpenFilepath_Callback(hObject, eventdata, handles)
+% hObject    handle to editOpenFilepath (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of editOpenFilepath as text
+%        str2double(get(hObject,'String')) returns contents of editOpenFilepath as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function editOpenFilepath_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to editOpenFilepath (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on button press in checkboxBiosemiLookup.
+function checkboxBiosemiLookup_Callback(hObject, eventdata, handles)
+% hObject    handle to checkboxBiosemiLookup (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkboxBiosemiLookup
+
+
+% --- Executes on selection change in popupmenuLookupType.
+function popupmenuLookupType_Callback(hObject, eventdata, handles)
+% hObject    handle to popupmenuLookupType (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: contents = cellstr(get(hObject,'String')) returns popupmenuLookupType contents as cell array
+%        contents{get(hObject,'Value')} returns selected item from popupmenuLookupType
+
+
+% --- Executes during object creation, after setting all properties.
+function popupmenuLookupType_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to popupmenuLookupType (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: popupmenu controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on button press in pushbuttonPlot2D.
+function pushbuttonPlot2D_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonPlot2D (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+figure;
+topoplot([],data.EEG.chanlocs, 'style', 'blank', ...
+    'electrodes', 'labelpoint', ...
+    'chaninfo', data.EEG.chaninfo);
