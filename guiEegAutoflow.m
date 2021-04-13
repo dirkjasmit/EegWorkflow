@@ -87,8 +87,12 @@ catch
 end
 
 % set the values of the uicontrols
-strlist = readtable(sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text');
-SetUIControlData(hObject, strlist);
+try
+    strlist = readtable(sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text');
+    SetUIControlData(hObject, strlist);
+catch
+    warning('Initialization file not found. Will be created on close.')
+end
 
 
 guidata(hObject, data);
