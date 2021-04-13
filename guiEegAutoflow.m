@@ -1223,7 +1223,7 @@ tmp = data.EEG;
 tmp = pop_iclabel(tmp, 'default');
 % brainlabel = FindSetNdx(tmp.etc.ic_classification.ICLabel.classes,'Brain');
 artifactlabel = FindSetNdx(tmp.etc.ic_classification.ICLabel.classes,{'Muscle','Eye','Heart','Line Noise','Channel Noise'});
-if get(data.checkboxKeepOther.Value) == 0.0
+if data.checkboxKeepOther.Value == 0.0
     % add the 'other' category
     artifactlabel = [artifactlabel {'Other'}];
 end
@@ -1231,7 +1231,7 @@ end
 % select components that are >45% certain brain. take sum per row i.e. for
 % all artefacts (along columns). This will allow uncertainty about which
 % artefact is present.
-icdeselect = sum(tmp.etc.ic_classification.ICLabel.classifications(:,artifactlabel),[],2) >= data.sliderMinICLabelPercent.Value;
+icdeselect = sum(tmp.etc.ic_classification.ICLabel.classifications(:,artifactlabel),2) >= data.sliderMinICLabelPercent.Value;
 fprintf('Removing components: ')
 fprintf(' %d',find(icdeselect))
 fprintf('\n')
@@ -1350,7 +1350,6 @@ function pbCompERP_Callback(hObject, eventdata, handles)
 
 
 data = guidata(hObject);
-ndx = data.ViewSegmentNumber;
 
 tmp = data.EEG;
 
