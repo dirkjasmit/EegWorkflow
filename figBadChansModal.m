@@ -22,7 +22,7 @@ function varargout = figBadChansModal(varargin)
 
 % Edit the above text to modify the response to help figBadChansModal
 
-% Last Modified by GUIDE v2.5 22-Oct-2020 12:37:58
+% Last Modified by GUIDE v2.5 28-Oct-2020 15:10:30
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -94,6 +94,8 @@ for ch=1:data_parent.EEG.nbchan
     end
 end
 %}
+
+data.saveEEG = data_parent.EEG;
 
 tmp = data_parent.EEG; 
 data.startpos = 1;
@@ -169,9 +171,6 @@ data_parent = guidata(data.Parent);
 ndx = find(data.isbad & ~data.exclude);
 if ~isempty(ndx)
     data_parent.EEG = pop_select(data_parent.EEG,'nochannel',ndx);
-    if data_parent.popupmenuReref.value==3
-        data_parent.EEG = pop_reref(data_parent.EEG,[]);
-    end
 end
 guidata(data.Parent, data_parent);
 
@@ -182,6 +181,12 @@ function pbCancel_Callback(hObject, eventdata, handles)
 % hObject    handle to pbCancel (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+data_parent = guidata(data.Parent);
+
+data_parent.EEG = data.saveEEG;
+guidata(data.Parent, data_parent);
 
 close(gcf);
 
@@ -576,6 +581,26 @@ data = guidata(hObject);
 data_parent = guidata(data.Parent);
 
 data_parent.EEG = pop_select(data_parent.EEG,'time',[1 data_parent.EEG.xmax-1.0]);
+data.viewdata = detrend(data_parent.EEG.data(:,:)');
+data.viewdata = data.viewdata + repmat((0:(data.nbchan-1)).*data.plotscale, size(data_parent.EEG.data(:,:)',1),1);
+
+guidata(data.Parent, data_parent);
+
+plotdata(data.axesPSD, data);
+
+
+% --- Executes on button press in pushbuttonRedoAvg.
+function pushbuttonRedoAvg_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonRedoAvg (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+data = guidata(hObject);
+data_parent = guidata(data.Parent);
+
+data_parent.EEG = pop_reref(data_parent.EEG,[],'exclude',find(data.exclude));
 data.viewdata = detrend(data_parent.EEG.data(:,:)');
 data.viewdata = data.viewdata + repmat((0:(data.nbchan-1)).*data.plotscale, size(data_parent.EEG.data(:,:)',1),1);
 
