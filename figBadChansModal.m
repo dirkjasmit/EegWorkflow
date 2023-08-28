@@ -22,7 +22,7 @@ function varargout = figBadChansModal(varargin)
 
 % Edit the above text to modify the response to help figBadChansModal
 
-% Last Modified by GUIDE v2.5 28-Oct-2020 15:10:30
+% Last Modified by GUIDE v2.5 29-Mar-2022 15:28:51
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -168,11 +168,17 @@ function pushbuttonDelete_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 data_parent = guidata(data.Parent);
 
+tmp = data_parent.EEG;
 ndx = find(data.isbad & ~data.exclude);
 if ~isempty(ndx)
-    data_parent.EEG = pop_select(data_parent.EEG,'nochannel',ndx);
+    tmp = pop_select(tmp,'nochannel',ndx);
+
+    % push existing data onto stack. Update <data.EEG> to tmp.
+    data_parent.Stack{length(data_parent.Stack)+1} = data_parent.EEG;
+    data_parent.StackLabel{length(data_parent.Stack)+1} = 'Bad channels';
+    data_parent.EEG = tmp;
+    guidata(data.Parent, data_parent);
 end
-guidata(data.Parent, data_parent);
 
 close(gcf);
 
@@ -580,6 +586,8 @@ function pushbuttonRemove1Sec_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 data_parent = guidata(data.Parent);
 
+data_parent.Stack{length(data_parent.Stack)+1} = data_parent.EEG;
+data_parent.StackLabel{length(data_parent.Stack)+1} = 'Remove first and last second';
 data_parent.EEG = pop_select(data_parent.EEG,'time',[1 data_parent.EEG.xmax-1.0]);
 data.viewdata = detrend(data_parent.EEG.data(:,:)');
 data.viewdata = data.viewdata + repmat((0:(data.nbchan-1)).*data.plotscale, size(data_parent.EEG.data(:,:)',1),1);
@@ -601,6 +609,32 @@ data = guidata(hObject);
 data_parent = guidata(data.Parent);
 
 data_parent.EEG = pop_reref(data_parent.EEG,[],'exclude',find(data.exclude));
+data.viewdata = detrend(data_parent.EEG.data(:,:)');
+data.viewdata = data.viewdata + repmat((0:(data.nbchan-1)).*data.plotscale, size(data_parent.EEG.data(:,:)',1),1);
+
+guidata(data.Parent, data_parent);
+
+plotdata(data.axesPSD, data);
+
+
+% --- Executes on button press in pushbuttonDeleteFirst1s.
+function pushbuttonDeleteFirst1s_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonDeleteFirst1s (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% hObject    handle to pushbuttonRemove1Sec (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+data_parent = guidata(data.Parent);
+
+% use pop_select to remove 1s from beginning of EEG
+data_parent.Stack{length(data_parent.Stack)+1} = data_parent.EEG;
+data_parent.StackLabel{length(data_parent.Stack)+1} = 'Remove first second';
+data_parent.EEG = pop_select(data_parent.EEG,'time',[1.0 data_parent.EEG.xmax]);
 data.viewdata = detrend(data_parent.EEG.data(:,:)');
 data.viewdata = data.viewdata + repmat((0:(data.nbchan-1)).*data.plotscale, size(data_parent.EEG.data(:,:)',1),1);
 

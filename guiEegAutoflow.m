@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 28-Oct-2020 14:57:43
+% Last Modified by GUIDE v2.5 29-Mar-2022 16:48:27
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -68,7 +68,7 @@ if ~exist('ALLEEG')
     try
         eeglab;
     catch E
-        AddToListbox(data.listboxStdout, '* warning * cannot find EEGLAB. Please locate.')
+        AddToListbox(data.listboxStdout, '*** warning *** cannot find EEGLAB. Please locate.')
         data.listboxStdout;
         if strcmpi(E.identifier,'MATLAB:UndefinedFunction')
             filepath = uigetdir();
@@ -83,7 +83,7 @@ filename = '/Volumes/FiveTB/Documents/Onderzoeksmap/Misofonie_ArjenSchroder/EEG/
 try
     data.EEG = pop_loadeep_v4(filename);
 catch
-    AddToListbox(data.listboxStdout, '* warning * loading sample file failed.')
+    AddToListbox(data.listboxStdout, '  *** Warning *** loading sample file failed.')
 end
 
 % set the values of the uicontrols
@@ -94,7 +94,8 @@ catch
     warning('Initialization file not found. Will be created on close.')
 end
 
-
+data.EEG = eeg_emptyset();
+data.Stack = {};
 guidata(hObject, data);
 
 
@@ -150,7 +151,7 @@ hObject.BackgroundColor = [.3 .6 .3];
 
 FilterSpec = {'*.*', 'All files'};
 fid = fopen('.EegWorkflow_DefaultPath.ini','r');
-DefaultPath = "."
+DefaultPath = ".";
 if fid>0
     try
         DefaultPath = fgetl(fid);
@@ -224,6 +225,8 @@ end
 %end
 
 data.EEG = eeg_checkset(data.EEG);
+data.Stack = {};
+data.StackLabel = {};
 %if isfield(data.EEG,'event')
 %    for ev=1:length(data.EEG.event)
 %        if ischar(data.EEG.event(ev).type)
@@ -270,34 +273,43 @@ if ~isfield(data,'EEG')
 end
 
 AddToListbox(data.listboxStdout, 'Reading channel locations.');
+tmp = data.EEG;
 
-if data.checkboxAddAFz.Value && sum(strcmpi({data.EEG.chanlocs.labels},'CPz'))==0
-    AddToListbox(data.listboxStdout, ' - Adding AFz channel as flatline.');
-    data.EEG.data(end+1,:) = 0;
-    data.EEG.nbchan = data.EEG.nbchan+1;
-    data.EEG.chanlocs(end+1).labels = 'AFz';
-    AddToListbox(data.listboxStdout, ' - Removing ICA decomposition.');
-    data.EEG.icaweights = [];
-    data.EEG.icawinv = [];
-    data.EEG.icasphere = [];
-    data.EEG = eeg_checkset(data.EEG);
+if data.checkboxAddAFz.Value 
+    if sum(strcmpi({tmp.chanlocs.labels},'CPz'))==0
+        AddToListbox(data.listboxStdout, ' - Adding CPz channel as flatline.');
+        tmp.data(end+1,:) = 0;
+        tmp.nbchan = data.EEG.nbchan+1;
+        tmp.chanlocs(end+1).labels = 'CPz';
+        AddToListbox(data.listboxStdout, ' - Removing ICA decomposition.');
+        tmp.icaweights = [];
+        tmp.icawinv = [];
+        tmp.icasphere = [];
+        tmp = eeg_checkset(data.EEG);
+    else
+        AddToListbox(data.listboxStdout, 'Warning: CPz already in data. Not adding a flatine CPz reference channel.');
+    end 
 end
 
 switch data.popupmenuLookupType.Value
     case 1
         AddToListbox(data.listboxStdout, ' - Looking up channels in standard-10-5-cap385.elp.');
-        data.EEG = pop_chanedit(data.EEG, 'lookup','standard-10-5-cap385.elp');
+        tmp = pop_chanedit(tmp, 'lookup','standard-10-5-cap385.elp');
     case 2
         AddToListbox(data.listboxStdout, ' - Renaming to 10/10 and looking up channels in standard-10-5-cap385.elp.');
         labs = readtable('BioSemi68_labels.txt');
-        [data.EEG.chanlocs.labels] = deal(labs);
-        data.EEG = pop_chanedit(data.EEG, 'lookup','standard-10-5-cap385.elp');
+        [tmp.chanlocs.labels] = deal(labs);
+        tmp = pop_chanedit(tmp, 'lookup','standard-10-5-cap385.elp');
     case 3
         AddToListbox(data.listboxStdout, ' - Looking up channel locations from 128 channel EEGLAB dataset.');
-        tmp = pop_loadset('Biosemi128.set');
-        data.EEG.chanlocs(1:128) = tmp.chanlocs;
+        tmp2 = pop_loadset('Biosemi128.set');
+        tmp.chanlocs(1:128) = tmp2.chanlocs;
 end
 
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Lookup';
+data.EEG = tmp;
 guidata(hObject,data)
 
 listboxEegProperties_Update(hObject)
@@ -381,7 +393,7 @@ function sliderLow_Callback(hObject, eventdata, handles)
 %        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
 
 data = guidata(hObject);
-data.textLow.String = sprintf('low: %.1f', get(hObject,'Value'));
+data.textLow.String = sprintf('Low: %.1f', get(hObject,'Value'));
 
 
 
@@ -413,7 +425,7 @@ function sliderHigh_Callback(hObject, eventdata, handles)
 %        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
 
 data = guidata(hObject);
-data.textHigh.String = sprintf('low: %.1f', get(hObject,'Value'));
+data.textHigh.String = sprintf('High: %.1f', get(hObject,'Value'));
 
 
 
@@ -582,6 +594,7 @@ if ~isfield(data,'EEG') || isempty(data.EEG.data)
     data.pbFlatline.BackgroundColor = [1 .6 .6];
     return
 end
+
 
 % open bad channel gui for additional selection of bad channels. Open
 % modal! Wait for window to close. Data will be collected upon passing the
@@ -1129,8 +1142,9 @@ for c=1:length(ch)
                         set(ch(c),'string', sprintf('%s', strlist.val{ndx}));
                     end
                 end
+                pause(0.005)
                 
-            case {'checkbox','slider','popupmenu'}
+            case {'checkbox','popupmenu'}
                 ndx = find(strcmpi(strlist.key, get(ch(c),'tag')));
                 if length(ndx)==1
                     if isnumeric(strlist.val)
@@ -1139,6 +1153,19 @@ for c=1:length(ch)
                         set(ch(c),'value', double(strlist.val{ndx}));
                     end
                 end
+                pause(0.005);
+                
+            case {'slider'}
+                ndx = find(strcmpi(strlist.key, get(ch(c),'tag')));
+                if length(ndx)==1
+                    if isnumeric(strlist.val)
+                        set(ch(c),'value', strlist.val(ndx));
+                    else
+                        set(ch(c),'value', double(strlist.val{ndx}));
+                    end
+                end
+                ch(c).Callback(ch(c),[])
+                pause(0.005);
         end
     end
 end             
@@ -1156,21 +1183,35 @@ data = guidata(hObject);
 set(hObject, 'BackgroundColor', [.3 .6 .3])
 pause(0.005);
 
+
+
 tmp = data.EEG;
 
-if tmp.nbchan>32
-    ncomps = round(tmp.nbchan*.7);
+ncomps = data.sliderNComps.Value;
+if ncomps<10
+    ncomps = 10;
+    AddToListbox(data.listboxStdout, 'Too few components selected for ICA. Taking the minimum of 10.')
 end
-
+    
 try
-    tmp = pop_runica(tmp, 'extended',1, 'icatype','binica', 'pca', ncomps);
+    try
+        AddToListbox(data.listboxStdout, 'Running ICA.')
+        tmp = pop_runica(tmp,'icatype','binica','pca',ncomps);
+    catch E
+        AddToListbox(data.listboxStdout, 'Running ICA failed. Reverting to slower version.')
+        tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',ncomps);
+    end
     data.EEG = tmp;
     guidata(hObject, data);
 catch E
     throw(E);
 end
 
-guidata(hObject, data)
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'ICA';
+data.EEG = tmp;
+guidata(hObject, data);
 
 set(hObject, 'BackgroundColor', [.9 .8 .6])
 
@@ -1220,6 +1261,7 @@ data = guidata(hObject);
 set(hObject, 'BackgroundColor', [.3 .6 .3])
 
 tmp = data.EEG;
+
 tmp = pop_iclabel(tmp, 'default');
 % brainlabel = FindSetNdx(tmp.etc.ic_classification.ICLabel.classes,'Brain');
 artifactlabel = FindSetNdx(tmp.etc.ic_classification.ICLabel.classes,{'Muscle','Eye','Heart','Line Noise','Channel Noise'});
@@ -1239,8 +1281,12 @@ if sum(icdeselect)>0
     tmp = pop_subcomp(tmp, find(icdeselect), false, 0);
 end
 
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'ICLabel';
 data.EEG = tmp;
-guidata(hObject,data);
+guidata(hObject, data);
+
 set(hObject, 'BackgroundColor', [.9 .8 .6])
 set(data.pushbuttonSave, 'BackgroundColor', [.6 1 .6])
 
@@ -1444,22 +1490,28 @@ uiwait(h);
 
 
 
-% --- Executes on button press in pbushbuttonResample.
-function pbushbuttonResample_Callback(hObject, eventdata, handles)
-% hObject    handle to pbushbuttonResample (see GCBO)
+% --- Executes on button press in pushbuttonResample.
+function pushbuttonResample_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonResample (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
 set(hObject,'backgroundcolor', [.3 .6 .3])
 pause(0.005);
+data = guidata(hObject);
+
+tmp = data.EEG;
 
 % resample if sampling rate different
-data = guidata(hObject);
 NewSrate = str2num(data.popupmenuRerefFreq.String{data.popupmenuRerefFreq.Value});
 if data.popupmenuRerefFreq.Value>1 && NewSrate~=data.EEG.srate
-    data.EEG = pop_resample(data.EEG, NewSrate);
-    guidata(hObject, data);
+    tmp = pop_resample(tmp, NewSrate);
 end
+
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Resample';
+data.EEG = tmp;
+guidata(hObject, data);
 
 set(hObject,'backgroundcolor', [.9 .8 .6])
 set(data.pushbuttonReref,'backgroundcolor', [.6 1 .6])
@@ -1543,16 +1595,24 @@ if ~isfield(data,'EEG') || isempty(data.EEG.data)
     return
 end
 
+% always work with a tmp variable.
+tmp = data.EEG;
 AddToListbox(data.listboxStdout, 'Removing cannels with <0.1 stdev.');
 
 % get very low StdDev for channels
 SD = std(data.EEG.data(:,:)');
 ndx = find(SD<.1);
 if ~isempty(ndx)
-    data.EEG = pop_select(data.EEG,'nochannel',ndx);
-    guidata(hObject, data);
+    tmp = pop_select(tmp,'nochannel',ndx);
 end
 
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Flatline';
+data.EEG = tmp;
+guidata(hObject, data);
+
+% set the button colors
 set(hObject, 'BackgroundColor', [.9 .8 .5]);
 set(data.pushbuttonChanlocs, 'BackgroundColor', [.6 1 .6]);
 
@@ -1575,21 +1635,28 @@ if ~isfield(data,'EEG') || isempty(data.EEG.data)
     return
 end
 
+tmp = data.EEG;
 
 if data.radiobuttonFIR.Value
     AddToListbox(data.listboxStdout,'Filtering with FIR filter.');    
-    data.EEG = pop_eegfiltnew(data.EEG, data.sliderLow.Value, data.sliderHigh.Value, [], false);
+    tmp = pop_eegfiltnew(tmp, data.sliderLow.Value, data.sliderHigh.Value, [], false);
     if data.checkboxNotch.Value
         AddToListbox(data.listboxStdout,'Notch filter 47 to 53 Hz.');    
-        data.EEG = pop_eegfiltnew(data.EEG, 47, 53, [], true);
+        tmp = pop_eegfiltnew(tmp, 47, 53, [], true);
     end
 else
     AddToListbox(data.listboxStdout,'Filtering with 2nd order Butterworth');    
-    data.EEG = filter_butter(data.EEG, data.EEG.srate, data.sliderLow.Value, data.sliderHigh.Value, 9, true, false, true);
+    tmp = filter_butter(tmp, tmp.srate, data.sliderLow.Value, data.sliderHigh.Value, 9, true, false, true);
     if data.checkboxNotch.Value
-        data.EEG = filter_butter(data.EEG, data.EEG.srate, 47, 53, 2, true, true);
+        tmp = filter_butter(tmp, tmp.srate, 47, 53, 2, true, true);
     end
 end
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Filter';
+data.EEG = tmp;
+guidata(hObject, data);
 
 data.pushbuttonFilter.BackgroundColor = [.9 .8 .6];
 data.pushbuttonInitialICA.BackgroundColor = [.6 1 .6];
@@ -1634,6 +1701,11 @@ data = guidata(hObject);
 set(hObject, 'BackgroundColor', [.3 .6 .3]);
 pause(.005);
 
+if ~isfield(data,'EEG') || isempty(data.EEG.data)
+    msgbox('No data available');
+    data.pushbuttonReref.BackgroundColor = [.6 1 .6];
+    return
+end
 
 tmp = data.EEG;
 if size(tmp.data,3) ~= tmp.trials
@@ -1643,22 +1715,30 @@ if tmp.trials==1 && tmp.pnts~=size(tmp.data,2)
     tmp.pnts = size(tmp.data,2);
 end
     
-if ~isfield(data,'EEG') || isempty(data.EEG.data)
-    msgbox('No data available');
-    data.pushbuttonReref.BackgroundColor = [.6 1 .6];
-    return
-end
-
 AddToListbox(data.listboxStdout, sprintf('Rereferencing data (%s)',data.popupmenuReref.String{data.popupmenuReref.Value}));
 
+try
 switch data.popupmenuReref.Value
     case 1, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),'CPZ')));
     case 2, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'M1','M2'})));
     case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
+    case 4, tmp = eeg_REST_reref(tmp);
+end
+catch
+    tmp = pop_runica(tmp,'icatype','binica','pca',16);
+    switch data.popupmenuReref.Value
+        case 1, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),'CPZ')));
+        case 2, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'M1','M2'})));
+        case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
+        case 4, tmp = eeg_REST_reref(tmp);
+    end
 end
 
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Rereference';
 data.EEG = tmp;
-guidata(hObject,data);
+guidata(hObject, data);
 
 set(hObject, 'BackgroundColor', [.9 .8 .6]);
 data.pushbuttonFilter.BackgroundColor = [1 .6 .6];
@@ -1706,13 +1786,13 @@ pause(0.005);
 
 AddToListbox(data.listboxStdout, 'Running intial ICA of 16 PCs');
 
-data.EEG.data = detrend(data.EEG.data','constant')';
-tmp = pop_runica(data.EEG,'icatype','binica','pca',16);
-% this works out: the reconstructed data from full ICA decomposition
-% results in a resuidual (all ICs above number 16). Determine the eye ICs,
-% remove the IC data by subtracting the source data.
-
-% resid = (tmp.icawinv*tmp.icaact - tmp.data);
+tmp = data.EEG;
+tmp.data = detrend(tmp.data','constant')';
+try
+    tmp = pop_runica(tmp,'icatype','binica','pca',16);
+catch E
+    tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',16);
+end
 
 if isempty(tmp.icaact)
     AddToListbox(data.listboxStdout, ' Recalculate ICA activations.');
@@ -1729,9 +1809,15 @@ AddToListbox(data.listboxStdout, sprintf(' Removing %d ICs',sum(icdeselect)));
 if sum(icdeselect)>0
     AddToListbox(data.listboxStdout, sprintf(' - Remove %d eye ICs',sum(icdeselect)));
     fprintf(' - Remove %d eye ICs\n',sum(icdeselect));
-    data.EEG.data = data.EEG.data - tmp.icawinv(:,icdeselect)*tmp.icaact(icdeselect,:);
+    % use the source subtraction method to remove ICs, NOT the pop_select
+    % method that reduces the dimensionality of the data.
+    tmp.data = tmp.data - tmp.icawinv(:,icdeselect)*tmp.icaact(icdeselect,:);
 end
 
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Initial ICA';
+data.EEG = tmp;
 guidata(hObject, data);
 
 set(hObject,'backgroundcolor',[.9 .8 .6])
@@ -1749,14 +1835,19 @@ pause(0.005);
 
 AddToListbox(data.listboxStdout, 'Clean data usig clean_rawdata');
 
-data.EEG = pop_clean_rawdata(data.EEG, 'FlatlineCriterion','off','ChannelCriterion','off','LineNoiseCriterion','off','Highpass','off',...
+tmp = pop_clean_rawdata(data.EEG, 'FlatlineCriterion','off','ChannelCriterion','off','LineNoiseCriterion','off','Highpass','off',...
     'BurstCriterion',data.sliderBurstCriterion.Value,...
-    'WindowCriterion',0.15,...
+    'WindowCriterion',0.25,...
     'BurstRejection',ifthen(data.checkboxBurstDelete.Value,'on','off'),...
     'Distance','Euclidian',...
     'WindowCriterionTolerances',eval(data.textBurstTolerance.String) );
      
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Clean';
+data.EEG = tmp;
 guidata(hObject, data);
+
 set(hObject,'backgroundcolor',[.9 .8 .6])
 set(data.pushbuttonICA, 'backgroundcolor', [.6 1 .6]);
 pause(0.005);
@@ -1773,9 +1864,15 @@ pause(0.005);
 
 AddToListbox(data.listboxStdout, 'Clean data of muscle actvit using AAR in 40s windows.');
 
-data.EEG = pop_autobssemg(data.EEG, 40, 40, 'bsscca', {'eigratio', [1000000]}, 'emg_psd', {'ratio', [10],'fs', [256],'femg', [15],'estimator',spectrum.welch,'range', [0  34]});
+tmp = data.EEG;
+tmp = pop_autobssemg(tmp, 40, 40, 'bsscca', {'eigratio', [1000000]}, 'emg_psd', {'ratio', [10],'fs', [256],'femg', [15],'estimator',spectrum.welch,'range', [0  34]});
 
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'AAR';
+data.EEG = tmp;
 guidata(hObject, data);
+
 set(hObject,'backgroundcolor',[.9 .8 .6])
 pause(0.005);
 
@@ -1929,6 +2026,8 @@ data.pbFilter.BackgroundColor = [.6 1 .6];
 
 guidata(hObject, data);
 
+
+
 function figUseSource_Callback(hObject)
 
 data = guidata(hObject);
@@ -2001,3 +2100,48 @@ figure;
 topoplot([],data.EEG.chanlocs, 'style', 'blank', ...
     'electrodes', 'labelpoint', ...
     'chaninfo', data.EEG.chaninfo);
+
+
+% --- If Enable == 'on', executes on mouse press in 5 pixel border.
+% --- Otherwise, executes on mouse press in 5 pixel border or over pushbuttonResample.
+function pushbuttonResample_ButtonDownFcn(hObject, eventdata, handles)
+% hObject    handle to pushbuttonResample (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on button press in pbUndo.
+function pbUndo_Callback(hObject, eventdata, handles)
+% hObject    handle to pbUndo (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+if isempty(data.Stack)
+    beep;
+    AddToListbox(data.listboxStdout, 'No more saved datasets.');
+else
+    AddToListbox(data.listboxStdout, sprintf('Undo %s',data.StackLabel{end}));
+    data.EEG = data.Stack{end};
+    if length(data.Stack)==1
+        data.Stack = {};
+        data.StackLabel = {};
+    else
+        data.Stack  = data.Stack(1:end-1);
+        data.StackLabel  = data.StackLabel(1:end-1);
+    end
+end
+
+guidata(hObject, data);
+
+
+% --- Executes on button press in pushbuttonSaveMemory.
+function pushbuttonSaveMemory_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonSaveMemory (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+global GlobEEG
+GlobEEG = data.EEG;

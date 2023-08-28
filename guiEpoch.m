@@ -1,4 +1,4 @@
-function varargout = guiEpoch(varargin)
+gesfunction varargout = guiEpoch(varargin)
 % GUIEPOCH MATLAB code for guiEpoch.fig
 %      GUIEPOCH, by itself, creates a new GUIEPOCH or raises the existing
 %      singleton*.
@@ -209,6 +209,12 @@ data.EEG = pop_epoch(data.EEG, evtlist, [data.sliderPre.Value./1000 data.sliderP
 data.EEG = pop_rmbase(data.EEG, [data.EEG.xmin*1000 0]);
 data.EEG.eventlist = evtlist;
 
+% store in local gui data
+guidata(hObject, data);
+
+% stroe in parent gui data. Push existing data onto stack. Update <data_parent.EEG> to tmp.
+data_parent.Stack{length(data_parent.Stack)+1} = data_parent.EEG;
+data_parent.StackLabel{length(data_parent.Stack)+1} = 'Epoch';
 data_parent.EEG = data.EEG;
 guidata(data.Parent, data_parent);
 
