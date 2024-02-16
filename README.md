@@ -15,6 +15,7 @@ INSTALLATION
   - ICLabel
   - AAR
   - ANTImport (when reading ANT files)
+  - biosig
 - Download the EegWorkflow and unzip into a folder. 
 - Start by:
   - running EegAutoflow.m
@@ -22,5 +23,7 @@ INSTALLATION
   - click 'change folder' if it pops up
   
 REQUIRED
-Requires the signal processing toolbox
+Requires the signal processing toolbox (required by EEGLAB)
+
+
 
