@@ -25,7 +25,7 @@ INSTALLATION
   - adding eeglab_2020_0 to the path (The EegWorkflow will popup a window for this)
   - click 'change folder' if it pops up
 
-FOR SAVING FILES: Edit the '.projectStrings.ini' file in the current directory and add your own project names
+FOR SAVING FILES: Edit the '.projectStrings.ini' file in the current directory and add your own project names. This allows you to specfiy the output file names.
 Do not touch the first line! This is the header.
   
 REQUIRED
