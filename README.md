@@ -24,6 +24,9 @@ INSTALLATION
   - running EegAutoflow.m
   - adding eeglab_2020_0 to the path (The EegWorkflow will popup a window for this)
   - click 'change folder' if it pops up
+
+FOR SAVING FILES: Edit the '.projectStrings.ini' file in the current directory and add your own project names
+Do not touch the first line! This is the header.
   
 REQUIRED
 Requires the signal processing toolbox (required by EEGLAB)
