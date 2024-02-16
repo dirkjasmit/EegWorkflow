@@ -216,8 +216,13 @@ switch FileName(end-3:end)
     case '.bdf'
         data.EEG = pop_readbdf([PathName FileName], [] , [], []);
         data.EEG.filename = FileName;
-        AddToListbox(data.listboxStdout, 'Read BDF file')
-        AddToListbox(data.listboxStdout, '* Warning * no reference channel selected. Must rereference to lose 40dB of noise.')
+        AddToListbox(data.listboxStdout, 'Read BDF file');
+        AddToListbox(data.listboxStdout, '* Warning * no reference channel selected. Must rereference to lose 40dB of noise.');
+        
+    case '.edf'
+        data.EEG = pop_biosig([PathName FileName]);
+        data.EEG.filename = FileName;
+        AddToListbox(data.listboxStdout, 'Read EDF file.');     
         
 end
 %catch E
@@ -297,9 +302,14 @@ switch data.popupmenuLookupType.Value
         tmp = pop_chanedit(tmp, 'lookup','standard-10-5-cap385.elp');
     case 2
         AddToListbox(data.listboxStdout, ' - Renaming to 10/10 and looking up channels in standard-10-5-cap385.elp.');
+        if tmp.nbchan>68
+            AddToListbox(data.listboxStdout, ' - Removing channels above 68!!!');
+            tmp = pop_select(tmp,'channel',1:68);
+        end
         labs = readtable('BioSemi68_labels.txt');
-        [tmp.chanlocs.labels] = deal(labs);
+        for ch=1:length(labs.label), tmp.chanlocs(ch).labels = labs.label{ch}; end
         tmp = pop_chanedit(tmp, 'lookup','standard-10-5-cap385.elp');
+        
     case 3
         AddToListbox(data.listboxStdout, ' - Looking up channel locations from 128 channel EEGLAB dataset.');
         tmp2 = pop_loadset('Biosemi128.set');
