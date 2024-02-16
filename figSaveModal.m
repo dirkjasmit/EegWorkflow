@@ -22,7 +22,7 @@ function varargout = figSaveModal(varargin)
 
 % Edit the above text to modify the response to help figSaveModal
 
-% Last Modified by GUIDE v2.5 22-Dec-2016 11:05:07
+% Last Modified by GUIDE v2.5 16-Feb-2024 12:43:38
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -73,6 +73,8 @@ data.EEG = varargin{1};
 if length(varargin)==2
     data.editSubject.String = varargin{2};
 end
+
+
 
 guidata(hObject, data);
 
@@ -206,6 +208,8 @@ function popupmenuProject_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+T = readtable('.projectStrings.ini', "FileType", 'text', "delimiter", "\t");
+set(hObject, 'String', T.ProjectName);
 
 
 % --- Executes on selection change in popupmenuRound.
@@ -271,6 +275,8 @@ function popupmenuSession_Callback(hObject, eventdata, handles)
 editSubject_Callback(hObject,eventdata,guidata(hObject));
 
 
+
+
 % --- Executes during object creation, after setting all properties.
 function popupmenuSession_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to popupmenuSession (see GCBO)
@@ -282,3 +288,14 @@ function popupmenuSession_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+
+% --- Executes during object creation, after setting all properties.
+function figure1_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to figure1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+pause(.05)
+
+
+

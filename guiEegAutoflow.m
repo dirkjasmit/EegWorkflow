@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 29-Mar-2022 16:48:27
+% Last Modified by GUIDE v2.5 16-Feb-2024 13:35:04
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -64,6 +64,12 @@ guidata(hObject, handles);
 
 data = guidata(hObject);
 
+AddToListbox(data.listboxStdout, '  *** Warning *** EEGLAB with specfic plugins is required')
+AddToListbox(data.listboxStdout, '   - EEGLAB V2020 has been tested, requires signal processing toolbox')
+AddToListbox(data.listboxStdout, '   - AAR')
+AddToListbox(data.listboxStdout, '   - CleanRawdata')
+AddToListbox(data.listboxStdout, '   - ICLabel')
+
 if ~exist('ALLEEG')
     try
         eeglab;
@@ -77,6 +83,10 @@ if ~exist('ALLEEG')
         end
     end
 end
+
+% initialise data
+data.EEG = eeg_emptyset();
+data.Stack = {};
 
 AddToListbox(data.listboxStdout, 'trying to load a sample file.')
 filename = '/Volumes/FiveTB/Documents/Onderzoeksmap/Misofonie_ArjenSchroder/EEG/EEG_misophonia_MMN/C004/C004.cnt';
@@ -94,8 +104,10 @@ catch
     warning('Initialization file not found. Will be created on close.')
 end
 
-data.EEG = eeg_emptyset();
-data.Stack = {};
+% initialise fontsize
+data.fontsize = 10;
+
+% push the data to the object
 guidata(hObject, data);
 
 
@@ -214,10 +226,16 @@ switch FileName(end-3:end)
         AddToListbox(data.listboxStdout, 'Read EEGLAB file')
 
     case '.bdf'
-        data.EEG = pop_readbdf([PathName FileName], [] , [], []);
+        data.EEG = pop_biosig([PathName FileName]);
         data.EEG.filename = FileName;
         AddToListbox(data.listboxStdout, 'Read BDF file');
-        AddToListbox(data.listboxStdout, '* Warning * no reference channel selected. Must rereference to lose 40dB of noise.');
+        AddToListbox(data.listboxStdout, '*** Warning *** no reference channel selected. Must rereference to lose 40dB of noise.');
+        AddToListbox(data.listboxStdout, '*** Warning *** Renaming EXG* to EXT*.');
+        for ch=1:data.EEG.nbchan
+            if strncmp(data.EEG.chanlocs(ch).labels, "EXG", 3)
+                data.EEG.chanlocs(ch).labels(3) = "T";
+            end
+        end
         
     case '.edf'
         data.EEG = pop_biosig([PathName FileName]);
@@ -301,19 +319,29 @@ switch data.popupmenuLookupType.Value
         AddToListbox(data.listboxStdout, ' - Looking up channels in standard-10-5-cap385.elp.');
         tmp = pop_chanedit(tmp, 'lookup','standard-10-5-cap385.elp');
     case 2
-        AddToListbox(data.listboxStdout, ' - Renaming to 10/10 and looking up channels in standard-10-5-cap385.elp.');
-        if tmp.nbchan>68
-            AddToListbox(data.listboxStdout, ' - Removing channels above 68!!!');
-            tmp = pop_select(tmp,'channel',1:68);
-        end
+        AddToListbox(data.listboxStdout, ' - Renaming Biosemi channels to 10/10 and looking up channels in standard-10-5-cap385.elp.');
         labs = readtable('BioSemi68_labels.txt');
-        for ch=1:length(labs.label), tmp.chanlocs(ch).labels = labs.label{ch}; end
+        for ch=1:length(labs.Label)
+            ndx = find(strcmp(labs.Label{ch}, {tmp.chanlocs.labels})); 
+            if length(ndx)==1
+                tmp.chanlocs(ndx).labels = labs.ten10{ch};
+            else
+                AddToListbox(data.listboxStdout, sprintf( '   channel %s not found', labs.Label{ch}));
+            end 
+        end
         tmp = pop_chanedit(tmp, 'lookup','standard-10-5-cap385.elp');
         
     case 3
-        AddToListbox(data.listboxStdout, ' - Looking up channel locations from 128 channel EEGLAB dataset.');
-        tmp2 = pop_loadset('Biosemi128.set');
-        tmp.chanlocs(1:128) = tmp2.chanlocs;
+        AddToListbox(data.listboxStdout, ' - Copying channel locations from a 128 channel EEGLAB dataset.');
+        lookup = pop_loadset('Biosemi128.set');
+        for ch=1:tmp.nbchan
+            ndx = find(strcmp(tmp.chanlocs(ch).labels, lookup.chanlocs.labels));
+            if length(ndx)==1
+                tmp.chanlocs(ndx) = lookup.chanlocs(ndx);
+            else
+                AddToListbox(data.listboxStdout, sprintf( '   channel %s not found', tmp.chanlocs(ch).labels));
+            end 
+        end
 end
 
 % push existing data onto stack. Update <data.EEG> to tmp.
@@ -1317,8 +1345,6 @@ uiwait(h);
 
 
 
-
-
 % --- Executes on button press in pbERP.
 function pbERP_Callback(hObject, eventdata, handles)
 % hObject    handle to pbERP (see GCBO)
@@ -1613,7 +1639,10 @@ AddToListbox(data.listboxStdout, 'Removing cannels with <0.1 stdev.');
 SD = std(data.EEG.data(:,:)');
 ndx = find(SD<.1);
 if ~isempty(ndx)
+    AddToListbox(data.listboxStdout, sprintf('  - Removing %d channels ', length(ndx)));
     tmp = pop_select(tmp,'nochannel',ndx);
+else
+    AddToListbox(data.listboxStdout, '  - NO channels removed');
 end
 
 % push existing data onto stack. Update <data.EEG> to tmp.
@@ -2155,3 +2184,67 @@ function pushbuttonSaveMemory_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 global GlobEEG
 GlobEEG = data.EEG;
+
+
+% --- Executes on button press in pushbuttonUp.
+function pushbuttonUp_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonUp (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+if data.fontsize>15
+    return
+end
+
+data.fontsize = data.fontsize + 1;
+
+setFontSize(hObject.Parent, data.fontsize)
+
+% push the fontsize data to the object
+guidata(hObject, data);
+
+
+
+% --- Executes on button press in pushbuttonDOWN.
+function pushbuttonDOWN_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonDOWN (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+if data.fontsize<4
+    return
+end
+
+data.fontsize = data.fontsize - 1;
+
+setFontSize(hObject.Parent, data.fontsize)
+
+% push the fontsize data to the object
+guidata(hObject, data);
+
+
+
+
+
+function setFontSize(hObject, fs)
+
+    try
+        chlist = hObject.Children;
+    catch
+        return
+    end
+    
+    for ch=1:length(chlist)
+        if isprop(chlist(1), 'fontsize')
+            set(chlist(ch), 'fontsize', fs);
+        end
+        if isprop(chlist(1), 'children')
+            if ~isempty(get(chlist(ch), 'children'))
+                setFontSize(chlist(ch), fs);
+            end
+        end
+    end

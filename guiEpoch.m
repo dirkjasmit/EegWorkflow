@@ -44,6 +44,7 @@ end
 % End initialization code - DO NOT EDIT
 
 
+
 % --- Executes just before guiEpoch is made visible.
 function guiEpoch_OpeningFcn(hObject, eventdata, handles, varargin)
 % This function has no output args, see OutputFcn.
@@ -70,6 +71,10 @@ guidata(hObject, handles);
 
 guiEpoch_FillCheckbox(hObject, handles);
 pause(0.1)
+
+end
+
+
 
 
 function guiEpoch_FillCheckbox(hObject, handles)
@@ -111,6 +116,8 @@ end
 
 pause(0.1)
 
+end
+
 
 % --- Outputs from this function are returned to the command line.
 function varargout = guiEpoch_OutputFcn(hObject, eventdata, handles) 
@@ -121,6 +128,8 @@ function varargout = guiEpoch_OutputFcn(hObject, eventdata, handles)
 
 % Get default command line output from handles structure
 varargout{1} = handles.output;
+
+end
 
 
 % --- Executes on sliderPost movement.
@@ -138,6 +147,9 @@ set(hObject,'value',round(get(hObject,'value')./10)*10);
 data.textPre.String = sprintf('%d',round(get(hObject,'value')));
 guidata(hObject,data);
 
+end
+
+
 % --- Executes during object creation, after setting all properties.
 function sliderPre_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to sliderPre (see GCBO)
@@ -147,6 +159,8 @@ function sliderPre_CreateFcn(hObject, eventdata, handles)
 % Hint: sliderPost controls usually have a light gray background.
 if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+
 end
 
 
@@ -164,6 +178,9 @@ set(hObject,'value',round(get(hObject,'value')./10)*10);
 data.textPost.String = sprintf('%d',round(get(hObject,'value')));
 guidata(hObject,data);
 
+end
+
+
 
 % --- Executes during object creation, after setting all properties.
 function sliderPost_CreateFcn(hObject, eventdata, handles)
@@ -176,6 +193,8 @@ if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColo
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
 
+end
+
 
 % --- Executes on button press in pushbuttonCancel.
 function pushbuttonCancel_Callback(hObject, eventdata, handles)
@@ -184,6 +203,9 @@ function pushbuttonCancel_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 close(gcf);
+
+end
+
 
 % --- Executes on button press in pushbuttonOK.
 function pushbuttonOK_Callback(hObject, eventdata, handles)
@@ -220,6 +242,9 @@ guidata(data.Parent, data_parent);
 
 close(gcf);
 
+end
+
+
 
 % --- Executes on button press in pushbuttonCheckAll.
 function pushbuttonCheckAll_Callback(hObject, eventdata, handles)
@@ -242,6 +267,8 @@ for x=1:299
     set(h,'value', setval)
 end
 pause(0.5);
+
+end
 
 
 % --- Executes on button press in checkboxSpecialPRT.
@@ -284,5 +311,7 @@ if get(hObject, 'value') && ~ismember('A',{handles.EEG.event.type})
     
     guidata(hObject, handles);
 end
-        
+
 guiEpoch_FillCheckbox(hObject, handles);
+
+end
