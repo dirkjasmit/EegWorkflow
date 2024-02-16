@@ -4,9 +4,12 @@ MATLAB/EEGLAB-based workflow for (automated) preprocessing of EEG data. Currentl
 - ANT .cnt
 - Brainvison analyzer
 - Neuroscan .cnt files
+- Biosemi BDF (NEW uses biosig toolbox, which correctly reads events)
 
 Tested on Mac OS and Linux, not windows. MATLAB GUIs are notoriously sensitive to screen settings, so
 you might have to adjust this to get visible buttons.
+
+NEW: there are now yellow font size buttons that increase decrease font size.
 
 INSTALLATION
 - Install EEGLAB version 2020_0 (see https://github.com/sccn/eeglab)
