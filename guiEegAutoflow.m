@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 16-Feb-2024 13:35:04
+% Last Modified by GUIDE v2.5 27-Feb-2024 16:37:57
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -43,6 +43,7 @@ else
 end
 % End initialization code - DO NOT EDIT
 
+% end of function ---------------------------------------------------------
 
 
 % --- Executes just before guiEegAutoflow is made visible.
@@ -110,6 +111,7 @@ data.fontsize = 10;
 % push the data to the object
 guidata(hObject, data);
 
+% end of function ---------------------------------------------------------
 
 
 
@@ -136,6 +138,10 @@ listboxObject.Value = size(listboxObject.String,1);
 
 pause(0.005);
 
+% end of function ---------------------------------------------------------
+
+
+
 
 % --- Outputs from this function are returned to the command line.
 function varargout = guiEegAutoflow_OutputFcn(hObject, eventdata, handles)
@@ -149,6 +155,8 @@ varargout{1} = handles.output;
 pause(0.05);
 % WinOnTop(hObject);
 
+% end of function ---------------------------------------------------------
+
 
 
 
@@ -159,6 +167,7 @@ function pushbuttonOpen_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 data = guidata(hObject);
+savecolour = hObject.BackgroundColor; % save colour for after cancel
 hObject.BackgroundColor = [.3 .6 .3];
 
 FilterSpec = {'*.*', 'All files'};
@@ -179,101 +188,116 @@ if fid>0
 end 
 
 %try
-switch FileName(end-3:end)
-    case '.cnt'
-        data.EEG = pop_loadeep_v4([PathName FileName], 'triggerfile', 'on');
-        data.EEG.filename = [PathName FileName];
-        tmp = data.EEG;
-        
-        % insert boundaries and events
-        evtcnt = 0;
-        for ev=1:length(tmp.event)
-            if tmp.event(ev).latency>1
-                evtcnt = evtcnt + 1;
-                if strcmp(tmp.event(ev).type,'__')
-                    typ = 'boundary';
-                else
-                    typ = strtrim(tmp.event(ev).type);
+if isnumeric(FileName) && FileName==0
+    AddToListbox(data.listboxStdout, '*** warning *** no file selected');
+    hObject.BackgroundColor = savecolour;
+else
+    switch FileName(end-3:end)
+        case '.cnt'
+            data.EEG = pop_loadeep_v4([PathName FileName], 'triggerfile', 'on');
+            data.EEG.filename = [PathName FileName];
+            tmp = data.EEG;
+
+            % insert boundaries and events
+            evtcnt = 0;
+            for ev=1:length(tmp.event)
+                if tmp.event(ev).latency>1
+                    evtcnt = evtcnt + 1;
+                    if strcmp(tmp.event(ev).type,'__')
+                        typ = 'boundary';
+                    else
+                        typ = strtrim(tmp.event(ev).type);
+                    end
+                    tmp.event(evtcnt).type = typ;
+                    tmp.event(evtcnt).latency = data.EEG.event(ev).latency;
+                    tmp.event(evtcnt).duration = data.EEG.event(ev).duration;
                 end
-                tmp.event(evtcnt).type = typ;
-                tmp.event(evtcnt).latency = data.EEG.event(ev).latency;
-                tmp.event(evtcnt).duration = data.EEG.event(ev).duration;
             end
-        end
-        
-        % check for event length (>10 events), start of first event named 31 (>100 sec), and
-        % existence of a boundary event. If not, search for a "jump" in
-        % activity just before the first event and put in a boundary
-        % event (segment will not work otherwise.)
-        if length(tmp.event)>10 && ~isempty(str2num(tmp.event(1).type)) ...
-                && tmp.event(1).latency>100*tmp.srate ...
-                && sum(strcmpi('boundary',{tmp.event.type}))==0
-            sig = tmp.data(:,(tmp.event(1).latency-tmp.srate*4):tmp.event(1).latency);
-            z = abs(zscore(mean(abs(diff(sig')')))');
-            ndx = tmp.event(1).latency-tmp.srate*4 + min(find(z>10)) + 0;
-            dummy = tmp.event(1);
-            dummy.type = 'boundary';
-            dummy.latency = ndx;
-            dummy.duration = 0;
-            tmp.event = cat(1,dummy,tmp.event(:));
-        end        
-        data.EEG = tmp;
-        AddToListbox(data.listboxStdout, 'Read ANT CNT file')
-        
-    case '.set'
-        data.EEG = pop_loadset([PathName FileName]);
-        data.EEG.filename = [PathName FileName];
-        AddToListbox(data.listboxStdout, 'Read EEGLAB file')
 
-    case '.bdf'
-        data.EEG = pop_biosig([PathName FileName]);
-        data.EEG.filename = FileName;
-        AddToListbox(data.listboxStdout, 'Read BDF file');
-        AddToListbox(data.listboxStdout, '*** Warning *** no reference channel selected. Must rereference to lose 40dB of noise.');
-        AddToListbox(data.listboxStdout, '*** Warning *** Renaming EXG* to EXT*.');
-        for ch=1:data.EEG.nbchan
-            if strncmp(data.EEG.chanlocs(ch).labels, "EXG", 3)
-                data.EEG.chanlocs(ch).labels(3) = "T";
+            % check for event length (>10 events), start of first event named 31 (>100 sec), and
+            % existence of a boundary event. If not, search for a "jump" in
+            % activity just before the first event and put in a boundary
+            % event (segment will not work otherwise.)
+            if length(tmp.event)>10 && ~isempty(str2num(tmp.event(1).type)) ...
+                    && tmp.event(1).latency>100*tmp.srate ...
+                    && sum(strcmpi('boundary',{tmp.event.type}))==0
+                sig = tmp.data(:,(tmp.event(1).latency-tmp.srate*4):tmp.event(1).latency);
+                z = abs(zscore(mean(abs(diff(sig')')))');
+                ndx = tmp.event(1).latency-tmp.srate*4 + min(find(z>10)) + 0;
+                dummy = tmp.event(1);
+                dummy.type = 'boundary';
+                dummy.latency = ndx;
+                dummy.duration = 0;
+                tmp.event = cat(1,dummy,tmp.event(:));
+            end        
+            data.EEG = tmp;
+            AddToListbox(data.listboxStdout, 'Read ANT CNT file')
+
+        case '.set'
+            data.EEG = pop_loadset([PathName FileName]);
+            data.EEG.filename = [PathName FileName];
+            AddToListbox(data.listboxStdout, 'Read EEGLAB file')
+
+        case '.bdf'
+            data.EEG = pop_biosig([PathName FileName]);
+            data.EEG.filename = FileName;
+            AddToListbox(data.listboxStdout, 'Read BDF file');
+            AddToListbox(data.listboxStdout, '*** Warning *** no reference channel selected. Must rereference to lose 40dB of noise.');
+            AddToListbox(data.listboxStdout, '*** Warning *** Renaming EXG* to EXT*.');
+            for ch=1:data.EEG.nbchan
+                if strncmp(data.EEG.chanlocs(ch).labels, "EXG", 3)
+                    data.EEG.chanlocs(ch).labels(3) = "T";
+                end
             end
-        end
-        
-    case '.edf'
-        data.EEG = pop_biosig([PathName FileName]);
-        data.EEG.filename = FileName;
-        AddToListbox(data.listboxStdout, 'Read EDF file.');     
-        
-end
-%catch E
-%    throw(E)
-%end
 
-data.EEG = eeg_checkset(data.EEG);
-data.Stack = {};
-data.StackLabel = {};
-%if isfield(data.EEG,'event')
-%    for ev=1:length(data.EEG.event)
-%        if ischar(data.EEG.event(ev).type)
-%            data.EEG.event(ev).type = data.EEG.event(ev).type(~ismember(data.EEG.event(ev).type,[0 9:13 32]));
-%        end
-%    end
-%end
+        case '.edf'
+            data.EEG = pop_biosig([PathName FileName]);
+            data.EEG.filename = FileName;
+            AddToListbox(data.listboxStdout, 'Read EDF file.');     
 
-% make all button red (except the next one)
-list = fieldnames(data);
-for l=1:length(list)
-    if isfield(getfield(data,list{l}),'style')
-        sty = get(getfield(data,list{l}),'style');
-        if strcmpi(sty,'pushbutton')
-            set(getfield(data,list{l}),'backgroundcolor',[1 .6 .6])
-        end
-        pause(0.005);
     end
+    
+    data.EEG = eeg_checkset(data.EEG);
+    data.Stack = {};
+    data.StackLabel = {};
+    %if isfield(data.EEG,'event')
+    %    for ev=1:length(data.EEG.event)
+    %        if ischar(data.EEG.event(ev).type)
+    %            data.EEG.event(ev).type = data.EEG.event(ev).type(~ismember(data.EEG.event(ev).type,[0 9:13 32]));
+    %        end
+    %    end
+    %end
+
+    % make all button red (except the next one)
+    list = fieldnames(data);
+    for l=1:length(list)
+        if isfield(getfield(data,list{l}),'style')
+            sty = get(getfield(data,list{l}),'style');
+            if strcmpi(sty,'pushbutton')
+                set(getfield(data,list{l}),'backgroundcolor',[1 .6 .6])
+            end
+            pause(0.005);
+        end
+    end
+    data.pushbuttonFlatline.BackgroundColor = [.6 1 .6];
+    data.pushbuttonLookup.BackgroundColor = [1 .6 .6];
+    data.pushbuttonChanlocs.BackgroundColor = [1 .6 .6];
+    data.pushbuttonResample.BackgroundColor = [1 .6 .6];
+    data.pushbuttonFilter.BackgroundColor = [1 .6 .6];
+    data.pushbuttonReref.BackgroundColor = [1 .6 .6];
+    data.pushbuttonInitialICA.BackgroundColor = [1 .6 .6];
+    data.pushbuttonAAR.BackgroundColor = [1 .6 .6];
+    data.pushbuttonBadChans.BackgroundColor = [1 .6 .6];
+    data.pushbuttonClean.BackgroundColor = [1 .6 .6];
+    data.pushbuttonICA.BackgroundColor = [1 .6 .6];
+    data.pushbuttonICLabel.BackgroundColor = [1 .6 .6];
+    hObject.BackgroundColor = [1 .6 .6];
+
 end
-data.pushbuttonFlatline.BackgroundColor = [.6 1 .6];
-hObject.BackgroundColor = [1 .6 .6];
 
 guidata(hObject,data)
 
+% end of function ---------------------------------------------------------
 
 
 
@@ -337,7 +361,7 @@ switch data.popupmenuLookupType.Value
         for ch=1:tmp.nbchan
             ndx = find(strcmp(tmp.chanlocs(ch).labels, lookup.chanlocs.labels));
             if length(ndx)==1
-                tmp.chanlocs(ndx) = lookup.chanlocs(ndx);
+                tmp.chanlocs(ch) = lookup.chanlocs(ndx);
             else
                 AddToListbox(data.listboxStdout, sprintf( '   channel %s not found', tmp.chanlocs(ch).labels));
             end 
@@ -354,6 +378,7 @@ listboxEegProperties_Update(hObject)
 set(hObject, 'BackgroundColor', [.9 .8 .5]);
 data.pushbuttonResample.BackgroundColor = [.6 1 .6];
 
+% end of function ---------------------------------------------------------
 
 
 % --- Executes on button press in pushbuttonFilter.
@@ -612,6 +637,7 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
+% end of function ---------------------------------------------------------
 
 
 
@@ -633,6 +659,8 @@ if ~isfield(data,'EEG') || isempty(data.EEG.data)
     return
 end
 
+% end of function ---------------------------------------------------------
+
 
 % open bad channel gui for additional selection of bad channels. Open
 % modal! Wait for window to close. Data will be collected upon passing the
@@ -642,6 +670,7 @@ uiwait(h);
 
 data.pushbuttonBadChans.BackgroundColor = [.9 .8 .6];
 
+% end of function ---------------------------------------------------------
 
 
 
@@ -697,6 +726,7 @@ data.pbAutoRej.BackgroundColor = [.6 1 .6];
 data.pbViewSeg.BackgroundColor = [.6 1 .6];
 guidata(hObject,data);
 
+% end of function ---------------------------------------------------------
 
 
 
@@ -723,6 +753,7 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
     set(hObject,'BackgroundColor','white');
 end
 
+% end of function ---------------------------------------------------------
 
 
 
@@ -733,6 +764,7 @@ function pbSegment_CreateFcn(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
+% end of function ---------------------------------------------------------
 
 
 
@@ -751,6 +783,7 @@ data.ViewSegmentNumber = get(hObject,'Value');
 guidata(hObject, data);
 
 
+% end of function ---------------------------------------------------------
 
 
 
@@ -873,6 +906,7 @@ start(data.ViewSegmentTimer);
 data.pbViewSeg.BackgroundColor = [1 .6 .6];
 guidata(hObject, data);
 
+% end of function ---------------------------------------------------------
 
 
 
@@ -1507,19 +1541,10 @@ function pushbuttonSave_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 tmp = data.EEG;
 
-% get file string up to first _ or . or space and use that as prospective
-% subject code
-[pathstr,name,ext] = fileparts(tmp.filename);
-pos = [strfind(name,'_'),strfind(name,'.')];
-pos = pos(~isempty(pos));
-if isempty(pos)
-    subjstr = name;
-else
-    subjstr = name(1:min(pos)-1);
-end
+
 
 % open modal dialog and wait
-h = figSaveModal(tmp, subjstr);
+h = figSaveModal(tmp, tmp.filename);
 uiwait(h);
 
 
@@ -1633,11 +1658,12 @@ end
 
 % always work with a tmp variable.
 tmp = data.EEG;
-AddToListbox(data.listboxStdout, 'Removing cannels with <0.1 stdev.');
+crit = data.sliderFlatlineSD.Value;
+AddToListbox(data.listboxStdout, sprintf('Removing channels with <%.1f stdev.', crit));
 
 % get very low StdDev for channels
 SD = std(data.EEG.data(:,:)');
-ndx = find(SD<.1);
+ndx = find(SD < crit);
 if ~isempty(ndx)
     AddToListbox(data.listboxStdout, sprintf('  - Removing %d channels ', length(ndx)));
     tmp = pop_select(tmp,'nochannel',ndx);
@@ -2184,6 +2210,7 @@ function pushbuttonSaveMemory_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 global GlobEEG
 GlobEEG = data.EEG;
+AddToListbox(data.listboxStdout, 'Saving data into global variable GlobEEG');
 
 
 % --- Executes on button press in pushbuttonUp.
@@ -2248,3 +2275,34 @@ function setFontSize(hObject, fs)
             end
         end
     end
+
+
+% --- If Enable == 'on', executes on mouse press in 5 pixel border.
+% --- Otherwise, executes on mouse press in 5 pixel border or over pushbuttonUp.
+function pushbuttonUp_ButtonDownFcn(hObject, eventdata, handles)
+% hObject    handle to pushbuttonUp (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on slider movement.
+function sliderFlatlineSD_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderFlatlineSD (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+data = guidata(hObject);
+data.textFilterSD.String = sprintf('%.1f', get(hObject,'Value'));
+
+% --- Executes during object creation, after setting all properties.
+function sliderFlatlineSD_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderFlatlineSD (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end

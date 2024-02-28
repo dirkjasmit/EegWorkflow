@@ -22,7 +22,7 @@ function varargout = figSaveModal(varargin)
 
 % Edit the above text to modify the response to help figSaveModal
 
-% Last Modified by GUIDE v2.5 16-Feb-2024 12:43:38
+% Last Modified by GUIDE v2.5 28-Feb-2024 11:06:34
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -68,15 +68,89 @@ if length(varargin)>2
     error('Too many parameters passed')
 end
 
-data = guidata(hObject);
-data.EEG = varargin{1};
-if length(varargin)==2
-    data.editSubject.String = varargin{2};
+
+% set the values of the uicontrols
+try
+    strlist = readtable(sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text');
+    SetUIControlData(hObject, strlist);
+catch
+    warning('Initialization file not found. Will be created on close.')
 end
 
 
+% get the object data (object is the modal figure). Save the passed
+% parameters (EEG struct and filename). Overrides the saved uitcontrol data
+% for some uicontrols
+data = guidata(hObject);
+data.EEG = varargin{1};
+if length(varargin)==2
+    data.Filename = varargin{2};
+end
+
+
+% get file string up to first _ or . or space and use that as prospective
+% subject code
+[pathstr, name, ext] = fileparts(data.Filename);
+subj = strsplit(name, data.popupmenuDelimiter.String{data.popupmenuDelimiter.Value});
+try
+    data.editSubject.String = subj{data.popupmenuItemNumber.Value};    
+catch
+    data.editSubject.String = '';    
+end
 
 guidata(hObject, data);
+editSubject_Callback(hObject,eventdata,guidata(hObject));
+
+
+
+
+
+% 
+function SetUIControlData(hObject, strlist)
+
+ch = get(hObject,'ch');
+for c=1:length(ch)
+    if strcmpi(get(ch(c),'Type'),'uicontrol')
+        switch get(ch(c),'Style')
+            
+            case 'edit'
+                ndx = find(strcmpi(strlist.key, get(ch(c),'tag')));
+                if length(ndx)==1
+                    if isnumeric(strlist.val)
+                        set(ch(c),'string', sprintf('%.4f', strlist.val(ndx)));
+                    else
+                        set(ch(c),'string', sprintf('%s', strlist.val{ndx}));
+                    end
+                end
+                pause(0.005)
+                
+            case {'checkbox','popupmenu'}
+                ndx = find(strcmpi(strlist.key, get(ch(c),'tag')));
+                if length(ndx)==1
+                    if isnumeric(strlist.val)
+                        set(ch(c),'value', strlist.val(ndx));
+                    else
+                        set(ch(c),'value', double(strlist.val{ndx}));
+                    end
+                end
+                pause(0.005);
+                
+            case {'slider'}
+                ndx = find(strcmpi(strlist.key, get(ch(c),'tag')));
+                if length(ndx)==1
+                    if isnumeric(strlist.val)
+                        set(ch(c),'value', strlist.val(ndx));
+                    else
+                        set(ch(c),'value', double(strlist.val{ndx}));
+                    end
+                end
+                ch(c).Callback(ch(c),[])
+                pause(0.005);
+        end
+    end
+end            
+
+
 
 
 % --- Outputs from this function are returned to the command line.
@@ -136,27 +210,31 @@ data = guidata(hObject);
 
 list = {};
 
+% add PROJECT within ()
 val = data.popupmenuProject.Value;
 tmp = data.popupmenuProject.String{val};
-if val~=1 && ~isempty(tmp)
-    list = [list {tmp}];
+if ~isempty(tmp)
+    list = [list {tmp(strfind(tmp,'(')+1:strfind(tmp,')')-1)}];
 end
 
+% add SESSION
 val = data.popupmenuSession.Value;
 tmp = data.popupmenuSession.String{val};
 if val~=1 && ~isempty(tmp)
     list = [list {tmp}];
 end
 
-% extract the code from the popupmenu string between () 
+% add TASK within ()
 val = data.popupmenuTask.Value;
 tmp = data.popupmenuTask.String{val};
 if val~=1 && ~isempty(tmp)
     list = [list {tmp(strfind(tmp,'(')+1:strfind(tmp,')')-1)}];
 end
 
+% add SUBJECT
 list = [list {data.editSubject.String}];
 
+% add ROUND
 val = data.popupmenuRound.Value;
 tmp = data.popupmenuRound.String{val};
 if val~=1 && ~isempty(tmp)
@@ -290,6 +368,8 @@ if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgr
 end
 
 
+
+
 % --- Executes during object creation, after setting all properties.
 function figure1_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to figure1 (see GCBO)
@@ -299,3 +379,127 @@ pause(.05)
 
 
 
+
+% --- Executes on selection change in popupmenuDelimiter.
+function popupmenuDelimiter_Callback(hObject, eventdata, handles)
+% hObject    handle to popupmenuDelimiter (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: contents = cellstr(get(hObject,'String')) returns popupmenuDelimiter contents as cell array
+%        contents{get(hObject,'Value')} returns selected item from popupmenuDelimiter
+
+data = guidata(hObject);
+
+% get file string up to first _ or . or space and use that as prospective
+% subject code
+[pathstr, name, ext] = fileparts(data.Filename);
+subj = strsplit(name, data.popupmenuDelimiter.String{data.popupmenuDelimiter.Value});
+try
+    data.editSubject.String = subj{data.popupmenuItemNumber.Value};    
+catch
+    data.editSubject.String = '';    
+end
+
+editSubject_Callback(hObject,eventdata,guidata(hObject));
+
+
+
+
+% --- Executes during object creation, after setting all properties.
+function popupmenuDelimiter_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to popupmenuDelimiter (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: popupmenu controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on selection change in popupmenuItemNumber.
+function popupmenuItemNumber_Callback(hObject, eventdata, handles)
+% hObject    handle to popupmenuItemNumber (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: contents = cellstr(get(hObject,'String')) returns popupmenuItemNumber contents as cell array
+%        contents{get(hObject,'Value')} returns selected item from popupmenuItemNumber
+
+data = guidata(hObject);
+
+% get file string up to first _ or . or space and use that as prospective
+% subject code
+[pathstr, name, ext] = fileparts(data.Filename);
+subj = strsplit(name, data.popupmenuDelimiter.String{data.popupmenuDelimiter.Value});
+try
+    data.editSubject.String = subj{data.popupmenuItemNumber.Value};    
+catch
+    data.editSubject.String = '';    
+end
+
+editSubject_Callback(hObject,eventdata,guidata(hObject));
+
+
+
+% --- Executes during object creation, after setting all properties.
+function popupmenuItemNumber_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to popupmenuItemNumber (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: popupmenu controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes when user attempts to close figure1.
+function figure1_CloseRequestFcn(hObject, eventdata, handles)
+% hObject    handle to figure1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: delete(hObject) closes the figure
+
+strlist = GetUIControlData(hObject);
+writetable(strlist,sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text')
+
+delete(hObject);
+
+
+
+
+% pass a handle to the gui, and it will extract all the UIControl object
+% data (slider, checkbox value and edit strings).
+function strlist = GetUIControlData(hObject)
+
+strlist = struct;
+
+ch = get(hObject,'ch');
+count = 0;
+for c=1:length(ch)
+    if strcmpi(get(ch(c),'Type'),'uicontrol')
+        skip=false;
+        switch get(ch(c),'Style')
+            case 'edit'
+                tmp1 = sprintf('%s',get(ch(c),'tag'));
+                tmp2 = sprintf('%s',get(ch(c),'string'));
+            case {'checkbox','slider','popupmenu'}
+                tmp1 = sprintf('%s',get(ch(c),'tag'));
+                tmp2 = sprintf('%.4f',get(ch(c),'value'));
+            otherwise
+                skip=true;
+        end
+        if ~skip
+            count = count + 1;
+            strlist(count).key = tmp1;
+            strlist(count).val = tmp2;
+        end
+    end
+end             
+
+strlist = struct2table(strlist);

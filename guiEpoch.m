@@ -1,4 +1,5 @@
-gesfunction varargout = guiEpoch(varargin)
+function varargout = guiEpoch(varargin)
+
 % GUIEPOCH MATLAB code for guiEpoch.fig
 %      GUIEPOCH, by itself, creates a new GUIEPOCH or raises the existing
 %      singleton*.
@@ -22,7 +23,7 @@ gesfunction varargout = guiEpoch(varargin)
 
 % Edit the above text to modify the response to help guiEpoch
 
-% Last Modified by GUIDE v2.5 22-Dec-2016 11:56:10
+% Last Modified by GUIDE v2.5 28-Feb-2024 11:24:35
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -72,8 +73,6 @@ guidata(hObject, handles);
 guiEpoch_FillCheckbox(hObject, handles);
 pause(0.1)
 
-end
-
 
 
 
@@ -116,7 +115,6 @@ end
 
 pause(0.1)
 
-end
 
 
 % --- Outputs from this function are returned to the command line.
@@ -129,7 +127,6 @@ function varargout = guiEpoch_OutputFcn(hObject, eventdata, handles)
 % Get default command line output from handles structure
 varargout{1} = handles.output;
 
-end
 
 
 % --- Executes on sliderPost movement.
@@ -147,7 +144,7 @@ set(hObject,'value',round(get(hObject,'value')./10)*10);
 data.textPre.String = sprintf('%d',round(get(hObject,'value')));
 guidata(hObject,data);
 
-end
+
 
 
 % --- Executes during object creation, after setting all properties.
@@ -161,7 +158,7 @@ if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColo
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
 
-end
+
 
 
 % --- Executes on sliderPost movement.
@@ -178,7 +175,7 @@ set(hObject,'value',round(get(hObject,'value')./10)*10);
 data.textPost.String = sprintf('%d',round(get(hObject,'value')));
 guidata(hObject,data);
 
-end
+
 
 
 
@@ -193,7 +190,7 @@ if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColo
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
 
-end
+
 
 
 % --- Executes on button press in pushbuttonCancel.
@@ -204,7 +201,7 @@ function pushbuttonCancel_Callback(hObject, eventdata, handles)
 
 close(gcf);
 
-end
+
 
 
 % --- Executes on button press in pushbuttonOK.
@@ -242,7 +239,7 @@ guidata(data.Parent, data_parent);
 
 close(gcf);
 
-end
+
 
 
 
@@ -268,7 +265,7 @@ for x=1:299
 end
 pause(0.5);
 
-end
+
 
 
 % --- Executes on button press in checkboxSpecialPRT.
@@ -313,5 +310,3 @@ if get(hObject, 'value') && ~ismember('A',{handles.EEG.event.type})
 end
 
 guiEpoch_FillCheckbox(hObject, handles);
-
-end
