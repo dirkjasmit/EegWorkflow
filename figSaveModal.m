@@ -22,7 +22,7 @@ function varargout = figSaveModal(varargin)
 
 % Edit the above text to modify the response to help figSaveModal
 
-% Last Modified by GUIDE v2.5 28-Feb-2024 11:06:34
+% Last Modified by GUIDE v2.5 28-Feb-2024 18:08:27
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -209,6 +209,13 @@ data = guidata(hObject);
 %  - round is meant for identical measurements on the same date.
 
 list = {};
+
+% add PREFIX within () 
+val = data.popupmenuPrefix.Value;
+tmp = data.popupmenuPrefix.String{val};
+if val~=1 && ~isempty(tmp)
+    list = [list {tmp(strfind(tmp,'(')+1:strfind(tmp,')')-1)}];
+end
 
 % add PROJECT within ()
 val = data.popupmenuProject.Value;
@@ -503,3 +510,29 @@ for c=1:length(ch)
 end             
 
 strlist = struct2table(strlist);
+
+
+% --- Executes on selection change in popupmenuPrefix.
+function popupmenuPrefix_Callback(hObject, eventdata, handles)
+% hObject    handle to popupmenuPrefix (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: contents = cellstr(get(hObject,'String')) returns popupmenuPrefix contents as cell array
+%        contents{get(hObject,'Value')} returns selected item from popupmenuPrefix
+
+editSubject_Callback(hObject,eventdata,guidata(hObject));
+
+
+
+% --- Executes during object creation, after setting all properties.
+function popupmenuPrefix_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to popupmenuPrefix (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: popupmenu controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
