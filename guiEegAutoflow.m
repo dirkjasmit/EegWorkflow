@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 27-Feb-2024 16:37:57
+% Last Modified by GUIDE v2.5 11-Mar-2024 11:05:02
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -279,7 +279,10 @@ else
             pause(0.005);
         end
     end
+    % Flatline and Remove Resting may turn green
     data.pushbuttonFlatline.BackgroundColor = [.6 1 .6];
+    data.pushbuttonRemoveResting.BackgroundColor = [.6 1 .6];
+    % The remainder should be red.
     data.pushbuttonLookup.BackgroundColor = [1 .6 .6];
     data.pushbuttonChanlocs.BackgroundColor = [1 .6 .6];
     data.pushbuttonResample.BackgroundColor = [1 .6 .6];
@@ -1900,12 +1903,14 @@ pause(0.005);
 
 AddToListbox(data.listboxStdout, 'Clean data usig clean_rawdata');
 
-tmp = pop_clean_rawdata(data.EEG, 'FlatlineCriterion','off','ChannelCriterion','off','LineNoiseCriterion','off','Highpass','off',...
+tmp = pop_clean_rawdata(data.EEG, ...
+    'FlatlineCriterion','off','LineNoiseCriterion','off','Highpass','off',...
+    'ChannelCriterion', data.sliderChannelMinR.Value, ...
     'BurstCriterion',data.sliderBurstCriterion.Value,...
-    'WindowCriterion',0.25,...
+    'WindowCriterion', 0.25 ,... % default value
     'BurstRejection',ifthen(data.checkboxBurstDelete.Value,'on','off'),...
     'Distance','Euclidian',...
-    'WindowCriterionTolerances',eval(data.textBurstTolerance.String) );
+    'ChannelCriterionMaxBadTime', data.sliderMaxBadTime.Value);
      
 % push existing data onto stack. Update <data.EEG> to tmp.
 data.Stack{length(data.Stack)+1} = data.EEG;
@@ -1952,8 +1957,8 @@ function checkboxBurstDelete_Callback(hObject, eventdata, handles)
 
 
 % --- Executes on slider movement.
-function sliderBurstTolerance_Callback(hObject, eventdata, handles)
-% hObject    handle to sliderBurstTolerance (see GCBO)
+function sliderBurstCriterion_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderChannelMinR (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
@@ -1962,13 +1967,13 @@ function sliderBurstTolerance_Callback(hObject, eventdata, handles)
 
 data = guidata(hObject);
 
-set(data.textBurstTolerance,'string',sprintf('[-Inf %.1f]',get(hObject,'value')));
+set(data.textBurstCriterion,'string',sprintf('%.1f',get(hObject,'value')));
 
 guidata(hObject, data);
 
 % --- Executes during object creation, after setting all properties.
-function sliderBurstTolerance_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to sliderBurstTolerance (see GCBO)
+function sliderBurstCriterion_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderChannelMinR (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
@@ -1979,8 +1984,8 @@ end
 
 
 % --- Executes on slider movement.
-function sliderBurstCriterion_Callback(hObject, eventdata, handles)
-% hObject    handle to sliderBurstCriterion (see GCBO)
+function sliderChannelMinR_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderChannelMinR (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
@@ -1989,14 +1994,14 @@ function sliderBurstCriterion_Callback(hObject, eventdata, handles)
 
 data = guidata(hObject);
 
-set(data.textBurstCriterion,'string',sprintf('%.2f',get(hObject,'value')));
+set(data.textChannelMinR,'string',sprintf('%.2f',get(hObject,'value')));
 
 guidata(hObject, data);
 
 
 % --- Executes during object creation, after setting all properties.
-function sliderBurstCriterion_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to sliderBurstCriterion (see GCBO)
+function sliderChannelMinR_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderChannelMinR (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
@@ -2306,3 +2311,80 @@ function sliderFlatlineSD_CreateFcn(hObject, eventdata, handles)
 if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
+
+
+% --- Executes on slider movement.
+function sliderMaxBadTime_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderMaxBadTime (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+
+data = guidata(hObject);
+
+set(data.textMaxBadTime,'string',sprintf('%.2f',get(hObject,'value')));
+
+guidata(hObject, data);
+
+
+
+% --- Executes during object creation, after setting all properties.
+function sliderMaxBadTime_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderMaxBadTime (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+
+
+% --- Executes on button press in pushbuttonRemoveResting.
+function pushbuttonRemoveResting_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonRemoveResting (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+data = guidata(hObject);
+set(hObject, 'BackgroundColor', [.3 .6 .3]);
+
+
+AddToListbox(data.listboxStdout, 'Looking for eventless periods.');
+
+% as always, work on tmp in stead of data.EEG
+tmp = data.EEG;
+mask = false(1,tmp.pnts);
+for e=1:length(tmp.event)
+    if (~strcmpi(tmp.event(e).type, "boundary"))
+        start = floor(tmp.event(e).latency-tmp.srate*2);
+        stop  = ceil(tmp.event(e).latency+tmp.srate*2);
+        start = ifthen(start<1, 1, start);
+        stop  = ifthen(stop<1, 1, stop);
+        mask(start:stop) = true;
+    end
+end
+
+AddToListbox(data.listboxStdout, sprintf('- removing %f.1 seconds of data', sum(~mask)/tmp.srate));
+
+% get points to remove, ndx1 the strat point, ndx2 the end points
+ndx1 = find(diff(mask)<0);
+ndx2 = find(diff(mask)>0)-1;
+if length(ndx1)>length(ndx2)
+    ndx2=[ndx2 tmp.pnts];
+end
+remove = [ndx1' ndx2'];
+tmp = pop_select(tmp, 'nopoint', remove);
+
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'AAR';
+data.EEG = tmp;
+guidata(hObject, data);
+
+set(hObject, 'BackgroundColor', [.9 .8 .5]);
+data.pushbuttonInitialICA.BackgroundColor = [.6 1 .6];
