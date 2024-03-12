@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 11-Mar-2024 11:05:02
+% Last Modified by GUIDE v2.5 12-Mar-2024 12:53:37
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -71,17 +71,13 @@ AddToListbox(data.listboxStdout, '   - AAR')
 AddToListbox(data.listboxStdout, '   - CleanRawdata')
 AddToListbox(data.listboxStdout, '   - ICLabel')
 
-if ~exist('ALLEEG')
-    try
+if isempty(which("eeglab.m"))
+    AddToListbox(data.listboxStdout, '*** warning *** cannot find EEGLAB. Please locate.')
+    data.listboxStdout;
+    if strcmpi(E.identifier,'MATLAB:UndefinedFunction')
+        filepath = uigetdir(pwd, "Locate EEGLAB");
+        addpath(filepath)
         eeglab;
-    catch E
-        AddToListbox(data.listboxStdout, '*** warning *** cannot find EEGLAB. Please locate.')
-        data.listboxStdout;
-        if strcmpi(E.identifier,'MATLAB:UndefinedFunction')
-            filepath = uigetdir();
-            addpath(filepath)
-            eeglab;
-        end
     end
 end
 
@@ -106,7 +102,12 @@ catch
 end
 
 % initialise fontsize
-data.fontsize = 10;
+if ispc
+    data.fontsize = 9;
+else
+    data.fontsize = 10;
+end
+setFontSize(hObject.Parent, data.fontsize)
 
 % push the data to the object
 guidata(hObject, data);
@@ -281,7 +282,6 @@ else
     end
     % Flatline and Remove Resting may turn green
     data.pushbuttonFlatline.BackgroundColor = [.6 1 .6];
-    data.pushbuttonRemoveResting.BackgroundColor = [.6 1 .6];
     % The remainder should be red.
     data.pushbuttonLookup.BackgroundColor = [1 .6 .6];
     data.pushbuttonChanlocs.BackgroundColor = [1 .6 .6];
@@ -542,8 +542,6 @@ function pbView_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 data = guidata(hObject);
-data.pbView.BackgroundColor = [.3 .6 .3];
-pause(0.005)
 
 if ~isfield(data,'EEG') || isempty(data.EEG.data)
     msgbox('No data available');
@@ -557,7 +555,6 @@ eegplot(tmp.data,'srate',tmp.srate,'eloc_file',tmp.chanlocs,'spacing',50,...
     'limits',[tmp.xmin tmp.xmax],'winlength',12,'position',screensize,...
     'events',tmp.event);
 
-data.pbView.BackgroundColor = [.6 1 .6];
 guidata(hObject,data);
 
 
@@ -1888,6 +1885,11 @@ data.StackLabel{length(data.Stack)+1} = 'Initial ICA';
 data.EEG = tmp;
 guidata(hObject, data);
 
+system('rm binica*.sph')
+system('rm binica*.ch')
+system('rm binica*.sph')
+system('rm binica*.sph')
+
 set(hObject,'backgroundcolor',[.9 .8 .6])
 
 
@@ -2350,10 +2352,8 @@ function pushbuttonRemoveResting_Callback(hObject, eventdata, handles)
 
 
 data = guidata(hObject);
-set(hObject, 'BackgroundColor', [.3 .6 .3]);
 
-
-AddToListbox(data.listboxStdout, 'Looking for eventless periods.');
+AddToListbox(data.listboxStdout, 'Looking for periods with events.');
 
 % as always, work on tmp in stead of data.EEG
 tmp = data.EEG;
@@ -2366,6 +2366,11 @@ for e=1:length(tmp.event)
         stop  = ifthen(stop<1, 1, stop);
         mask(start:stop) = true;
     end
+end
+
+if data.checkboxTaskNoTask.Value>0
+    AddToListbox(data.listboxStdout, sprintf('- reversing the mask (removing task data)', sum(~mask)/tmp.srate));
+    mask = ~mask;
 end
 
 AddToListbox(data.listboxStdout, sprintf('- removing %f.1 seconds of data', sum(~mask)/tmp.srate));
@@ -2382,9 +2387,41 @@ tmp = pop_select(tmp, 'nopoint', remove);
 
 % push existing data onto stack. Update <data.EEG> to tmp.
 data.Stack{length(data.Stack)+1} = data.EEG;
-data.StackLabel{length(data.Stack)+1} = 'AAR';
+data.StackLabel{length(data.Stack)+1} = 'Remove task or no-task';
 data.EEG = tmp;
 guidata(hObject, data);
 
-set(hObject, 'BackgroundColor', [.9 .8 .5]);
-data.pushbuttonInitialICA.BackgroundColor = [.6 1 .6];
+
+
+
+
+
+% --- Executes on button press in checkboxTaskNoTask.
+function checkboxTaskNoTask_Callback(hObject, eventdata, handles)
+
+% hObject    handle to checkboxTaskNoTask (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkboxTaskNoTask
+
+data = guidata(hObject);
+tmp = ifthen(get(hObject,"Value")>0, 'Remove task', 'Remove no-task');
+data.pushbuttonRemoveResting.String = tmp;
+
+
+% --- If Enable == 'on', executes on mouse press in 5 pixel border.
+% --- Otherwise, executes on mouse press in 5 pixel border or over checkboxTaskNoTask.
+function checkboxTaskNoTask_ButtonDownFcn(hObject, eventdata, handles)
+% hObject    handle to checkboxTaskNoTask (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on button press in checkbox19.
+function checkbox19_Callback(hObject, eventdata, handles)
+% hObject    handle to checkbox19 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkbox19

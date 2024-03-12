@@ -349,8 +349,6 @@
      EEG	      A2	     135	       0	      85
      EOG	    VEOG	     125	      63	      85
      EOG	    HEOG	    -118	     -48	      85
-     EOG	    EOG1	     125	      63	      85
-     EOG	    EOG2	    -118	     -48	      85
      EOG	    LO1			-118	     -48	      85
      EOG	    LO2			 118	      48	      85
      EOG	    IO1	     	-125	     -63	      85
