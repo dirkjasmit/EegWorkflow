@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 12-Mar-2024 12:53:37
+% Last Modified by GUIDE v2.5 23-Apr-2024 16:16:59
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -257,6 +257,14 @@ else
             AddToListbox(data.listboxStdout, 'Read EDF file.');     
 
     end
+
+    if data.checkboxMaskEventNum.Value && ~isempty(data.EEG) && ~isempty(data.EEG.event)
+        for e=1:length(data.EEG.event)
+            if isnumeric(data.EEG.event(e).type)
+                data.EEG.event(e).type = bitand(data.EEG.event(e).type , 255);
+            end
+        end
+    end
     
     data.EEG = eeg_checkset(data.EEG);
     data.Stack = {};
@@ -362,7 +370,7 @@ switch data.popupmenuLookupType.Value
         AddToListbox(data.listboxStdout, ' - Copying channel locations from a 128 channel EEGLAB dataset.');
         lookup = pop_loadset('Biosemi128.set');
         for ch=1:tmp.nbchan
-            ndx = find(strcmp(tmp.chanlocs(ch).labels, lookup.chanlocs.labels));
+            ndx = find(strcmp(tmp.chanlocs(ch).labels, {lookup.chanlocs.labels}));
             if length(ndx)==1
                 tmp.chanlocs(ch) = lookup.chanlocs(ndx);
             else
@@ -1264,7 +1272,11 @@ if ncomps<10
     ncomps = 10;
     AddToListbox(data.listboxStdout, 'Too few components selected for ICA. Taking the minimum of 10.')
 end
-    
+if ncomps>tmp.nbchan
+    ncomps=tmp.nbchan;
+    AddToListbox(data.listboxStdout, 'Too many components selected for ICA. Taking the maximum.')
+end
+
 try
     try
         AddToListbox(data.listboxStdout, 'Running ICA.')
@@ -1795,7 +1807,7 @@ catch
         case 1, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),'CPZ')));
         case 2, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'M1','M2'})));
         case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
-        case 4, tmp = eeg_REST_reref(tmp);
+        case 4, error('not yet finsihed')
     end
 end
 
@@ -2425,3 +2437,12 @@ function checkbox19_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 % Hint: get(hObject,'Value') returns toggle state of checkbox19
+
+
+% --- Executes on button press in checkboxMaskEventNum.
+function checkboxMaskEventNum_Callback(hObject, eventdata, handles)
+% hObject    handle to checkboxMaskEventNum (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkboxMaskEventNum
