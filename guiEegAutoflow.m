@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 23-Apr-2024 16:16:59
+% Last Modified by GUIDE v2.5 10-Jul-2024 11:42:56
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -240,10 +240,15 @@ else
             AddToListbox(data.listboxStdout, 'Read EEGLAB file')
 
         case '.bdf'
-            data.EEG = pop_biosig([PathName FileName]);
+            if data.checkboxBiosig.Value==0
+                AddToListbox(data.listboxStdout, 'Read BDF file with pop_biosig');
+                data.EEG = pop_biosig([PathName FileName]);
+            else
+                AddToListbox(data.listboxStdout, 'Read BDF file with pop_readbdf');
+                data.EEG = pop_readbdf([PathName FileName]);
+            end
             data.EEG.filename = FileName;
-            AddToListbox(data.listboxStdout, 'Read BDF file');
-            AddToListbox(data.listboxStdout, '*** Warning *** no reference channel selected. Must rereference to lose 40dB of noise.');
+            AddToListbox(data.listboxStdout, '*** Warning *** Reading raw data. Please rereference in the next steps.');
             AddToListbox(data.listboxStdout, '*** Warning *** Renaming EXG* to EXT*.');
             for ch=1:data.EEG.nbchan
                 if strncmp(data.EEG.chanlocs(ch).labels, "EXG", 3)
@@ -262,6 +267,8 @@ else
         for e=1:length(data.EEG.event)
             if isnumeric(data.EEG.event(e).type)
                 data.EEG.event(e).type = bitand(data.EEG.event(e).type , 255);
+            elseif ~isempty(str2num(data.EEG.event(e).type))
+                data.EEG.event(e).type = sprintf('%d', bitand(str2num(data.EEG.event(e).type), 255));
             end
         end
     end
@@ -1691,7 +1698,7 @@ guidata(hObject, data);
 
 % set the button colors
 set(hObject, 'BackgroundColor', [.9 .8 .5]);
-set(data.pushbuttonChanlocs, 'BackgroundColor', [.6 1 .6]);
+set(data.pushbuttonExcessive, 'BackgroundColor', [.6 1 .6]);
 
 
 
@@ -1899,8 +1906,6 @@ guidata(hObject, data);
 
 system('rm binica*.sph')
 system('rm binica*.ch')
-system('rm binica*.sph')
-system('rm binica*.sph')
 
 set(hObject,'backgroundcolor',[.9 .8 .6])
 
@@ -2285,8 +2290,12 @@ function setFontSize(hObject, fs)
     end
     
     for ch=1:length(chlist)
-        if isprop(chlist(1), 'fontsize')
-            set(chlist(ch), 'fontsize', fs);
+        if isprop(chlist(ch), 'fontsize')
+            try
+                set(chlist(ch), 'fontsize', fs);
+            catch
+                beep
+            end
         end
         if isprop(chlist(1), 'children')
             if ~isempty(get(chlist(ch), 'children'))
@@ -2446,3 +2455,141 @@ function checkboxMaskEventNum_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 % Hint: get(hObject,'Value') returns toggle state of checkboxMaskEventNum
+
+
+% --- Executes on button press in pushbuttonExcessive.
+function pushbuttonExcessive_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonExcessive (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+set(hObject, 'BackgroundColor', [.3 .6 .3]);
+
+if ~isfield(data,'EEG') || isempty(data.EEG.data)
+    msgbox('No data available');
+    set(hObject, 'BackgroundColor', [1 .6 .6]);
+    return
+end
+
+% always work with a tmp variable.
+tmp = data.EEG;
+crit = data.sliderExcessive.Value;
+AddToListbox(data.listboxStdout, sprintf('Removing channels with <%.1f stdev.', crit));
+
+% get very low StdDev for channels
+SD = std(data.EEG.data(:,:)');
+Z = (SD-mean(SD))./std(SD);
+ndx = find(Z > crit);
+if ~isempty(ndx)
+    AddToListbox(data.listboxStdout, sprintf('  - Removing %d channels ', length(ndx)));
+    tmp = pop_select(tmp,'nochannel',ndx);
+else
+    AddToListbox(data.listboxStdout, '  - NO channels removed');
+end
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Excessive channel SD';
+data.EEG = tmp;
+guidata(hObject, data);
+
+% set the button colors
+set(hObject, 'BackgroundColor', [.9 .8 .5]);
+set(data.pushbuttonChanlocs, 'BackgroundColor', [.6 1 .6]);
+
+
+
+
+% --- Executes on slider movement.
+function sliderInitialBadChanSD_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderInitialBadChanSD (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+data = guidata(hObject);
+data.textInitialBadChanSD.String = sprintf('%.1f', get(hObject,'Value'));
+
+% --- Executes during object creation, after setting all properties.
+function sliderInitialBadChanSD_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderInitialBadChanSD (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+
+
+% --- Executes on button press in checkboxBiosig.
+function checkboxBiosig_Callback(hObject, eventdata, handles)
+% hObject    handle to checkboxBiosig (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkboxBiosig
+
+
+% --- Executes on button press in pushbuttonOverlay.
+function pushbuttonOverlay_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonOverlay (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+data = guidata(hObject);
+
+if ~isfield(data,'EEG') || isempty(data.EEG.data)
+    msgbox('No data available');
+    data.pbView.BackgroundColor = [1 .6 .6];
+    return
+end
+
+if ~isfield(data,'EEG') || isempty(data.EEG) || data.EEG.nbchan==0
+    AddToListbox(data.listboxStdout, '*** Warning *** no data available');
+    return
+end
+if ~isfield(data,'Stack') || isempty(data.Stack)
+    AddToListbox(data.listboxStdout, '*** Warning *** no comparison data available');
+    return
+end
+
+screensize = get(groot, 'Screensize' );
+tmp1 = data.EEG;
+tmp2 = data.Stack{length(data.Stack)};
+if tmp1.nbchan==tmp2.nbchan && tmp1.pnts==tmp2.pnts 
+    eegplot(tmp2.data,'srate',tmp2.srate,'eloc_file',tmp2.chanlocs,'spacing',50,...
+        'limits',[tmp2.xmin tmp2.xmax],'winlength',12,'position',screensize,...
+        'events',tmp2.event, 'data2', tmp1.data);
+else
+    AddToListbox(data.listboxStdout, '*** Warning *** data and comparison data are incompatible to plot together');
+end
+
+guidata(hObject,data);
+
+
+% --- Executes on slider movement.
+function sliderExcessive_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderExcessive (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+data = guidata(hObject);
+data.textExcessive.String = sprintf('%.1f', get(hObject,'Value'));
+
+% --- Executes during object creation, after setting all properties.
+function sliderExcessive_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderExcessive (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
