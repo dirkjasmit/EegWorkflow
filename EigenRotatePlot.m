@@ -26,7 +26,7 @@ if size(D,1)==size(D,2)
     [evec, eval] = pcacov(D); % pcacov wil produce real numbers and ordered large to small
     warning('using data as correlation matrix')
 else
-    [evec, eval] = pcacov(nancorr(D)); % pcacov wil produce real numbers and ordered large to small
+    [evec, eval] = pcacov(corr(D,'rows','pairwise')); % pcacov wil produce real numbers and ordered large to small
 end
 eval = diag(eval);
 % disp(eval);

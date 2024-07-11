@@ -573,7 +573,7 @@ for l=1:length(delstr)
     if ~isempty(data.listboxDirectDelete.String)
         data.listboxDirectDelete.String = cat(1, data.listboxDirectDelete.String, data.labels(ndx));
     else
-        data.listboxDirectDelete.String = cat(1, data.listboxDirectDelete.String, data.labels(ndx));
+        data.listboxDirectDelete.String = data.labels(ndx);
     end
 end
 

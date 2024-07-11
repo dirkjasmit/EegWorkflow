@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 10-Jul-2024 11:42:56
+% Last Modified by GUIDE v2.5 11-Jul-2024 10:29:50
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -2593,3 +2593,44 @@ function sliderExcessive_CreateFcn(hObject, eventdata, handles)
 if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor',[.9 .9 .9]);
 end
+
+
+% --- Executes on button press in pushbuttoSaveChanlocs.
+function pushbuttoSaveChanlocs_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttoSaveChanlocs (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+if ~isfield(data,'EEG')|| isempty(data.EEG.chanlocs)
+    AddToListbox(data.listboxStdout, '*** Warning *** No EEG data to save channel locations.');
+    return
+end
+
+Chanlocs = data.EEG;
+Chanlocs.data = []; % do not save the data, only channel locations
+Chanlocs.icaact = [];
+save('.chanlocs.mat',"Chanlocs")
+AddToListbox(data.listboxStdout, 'Saving EEG data channel locations');
+AddToListbox(data.listboxStdout, sprintf('- %d channels saved', Chanlocs.nbchan));
+
+
+% --- Executes on button press in pushbuttonImpute.
+function pushbuttonImpute_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonImpute (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+if ~exist('.chanlocs.mat', 'file')
+    AddToListbox(data.listboxStdout, '*** Warning *** No EEG data saved to impute with.');
+    return
+end
+
+load('.chanlocs.mat') % loads Chanlocs EEG struct
+
+data.EEG = pop_interp(data.EEG, Chanlocs.chanlocs, 'spherical');
+
+guidata(hObject,data);
