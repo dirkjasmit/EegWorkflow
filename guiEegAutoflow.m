@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 11-Jul-2024 10:29:50
+% Last Modified by GUIDE v2.5 04-Feb-2025 08:55:53
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -171,7 +171,13 @@ data = guidata(hObject);
 savecolour = hObject.BackgroundColor; % save colour for after cancel
 hObject.BackgroundColor = [.3 .6 .3];
 
-FilterSpec = {'*.*', 'All files'};
+FilterSpec = {'*.*', 'All files'
+    '*.bdf', 'Biosemi'
+    '*.cnt', 'ANT Neuro'
+    '*.edf', 'European data format'
+    '*.set', 'EEGLAB'
+    '*.vhdr', 'BrainVision'
+    };
 fid = fopen('.EegWorkflow_DefaultPath.ini','r');
 DefaultPath = ".";
 if fid>0
@@ -193,8 +199,9 @@ if isnumeric(FileName) && FileName==0
     AddToListbox(data.listboxStdout, '*** warning *** no file selected');
     hObject.BackgroundColor = savecolour;
 else
-    switch FileName(end-3:end)
-        case '.cnt'
+    zz = strsplit(FileName,'.');
+    switch zz{end}
+        case 'cnt'
             data.EEG = pop_loadeep_v4([PathName FileName], 'triggerfile', 'on');
             data.EEG.filename = [PathName FileName];
             tmp = data.EEG;
@@ -234,43 +241,44 @@ else
             data.EEG = tmp;
             AddToListbox(data.listboxStdout, 'Read ANT CNT file')
 
-        case '.set'
+        case 'set'
             data.EEG = pop_loadset([PathName FileName]);
             data.EEG.filename = [PathName FileName];
             AddToListbox(data.listboxStdout, 'Read EEGLAB file')
 
-        case '.bdf'
-            if data.checkboxBiosig.Value==0
+        case 'bdf'
+            if data.checkboxBiosig.Value ~= 0
                 AddToListbox(data.listboxStdout, 'Read BDF file with pop_biosig');
-                data.EEG = pop_biosig([PathName FileName]);
+                data.EEG = pop_biosig([PathName FileName], 'bdfeventmode',1);
+                AddToListbox(data.listboxStdout, ' - data read');
             else
                 AddToListbox(data.listboxStdout, 'Read BDF file with pop_readbdf');
-                data.EEG = pop_readbdf([PathName FileName]);
+                AddToListbox(data.listboxStdout, ' - read file header');
+                tmp = sopen([PathName FileName]);
+                AddToListbox(data.listboxStdout, sprintf(' - %d channels', tmp.NS));
+                data.EEG = pop_readbdf([PathName FileName], [], tmp.NS);
+                AddToListbox(data.listboxStdout, ' - data read');
             end
             data.EEG.filename = FileName;
-            AddToListbox(data.listboxStdout, '*** Warning *** Reading raw data. Please rereference in the next steps.');
-            AddToListbox(data.listboxStdout, '*** Warning *** Renaming EXG* to EXT*.');
+            AddToListbox(data.listboxStdout, ' - *** NOTE Data are raw. Please rereference in the next steps.');
+            AddToListbox(data.listboxStdout, ' - *** NOTE Renaming EXG* to EXT*.');
             for ch=1:data.EEG.nbchan
                 if strncmp(data.EEG.chanlocs(ch).labels, "EXG", 3)
                     data.EEG.chanlocs(ch).labels(3) = "T";
                 end
             end
 
-        case '.edf'
+        case 'edf'
+            % read header
             data.EEG = pop_biosig([PathName FileName]);
             data.EEG.filename = FileName;
             AddToListbox(data.listboxStdout, 'Read EDF file.');     
 
-    end
-
-    if data.checkboxMaskEventNum.Value && ~isempty(data.EEG) && ~isempty(data.EEG.event)
-        for e=1:length(data.EEG.event)
-            if isnumeric(data.EEG.event(e).type)
-                data.EEG.event(e).type = bitand(data.EEG.event(e).type , 255);
-            elseif ~isempty(str2num(data.EEG.event(e).type))
-                data.EEG.event(e).type = sprintf('%d', bitand(str2num(data.EEG.event(e).type), 255));
-            end
-        end
+        case 'vhdr'
+            % read header
+            data.EEG = pop_loadbv(PathName, FileName, [], []);
+            data.EEG.filename = FileName;
+            AddToListbox(data.listboxStdout, 'Read BrainVision file.');     
     end
     
     data.EEG = eeg_checkset(data.EEG);
@@ -384,6 +392,22 @@ switch data.popupmenuLookupType.Value
                 AddToListbox(data.listboxStdout, sprintf( '   channel %s not found', tmp.chanlocs(ch).labels));
             end 
         end
+        
+    case 4
+        AddToListbox(data.listboxStdout, ' - TD Brain channel locations');
+        lookup = pop_loadset('TDBRain.set');
+        for ch=1:tmp.nbchan
+            ndx = find(strcmp(tmp.chanlocs(ch).labels, {lookup.chanlocs.labels}));
+            if length(ndx)==1
+                tmp.chanlocs(ch) = lookup.chanlocs(ndx);
+            else
+                AddToListbox(data.listboxStdout, sprintf( '   channel %s not found', tmp.chanlocs(ch).labels));
+            end
+        end
+        
+    case 5
+        AddToListbox(data.listboxStdout, ' - EGI 128 EEG channels lookup');
+        tmp = pop_chanedit(tmp, {'lookup','/Users/dirksmit/MATLAB/eeglab2023.1/plugins/dipfit/standard_BEM/elec/standard_1005.elc'},'load',{'/Users/dirksmit/MATLAB/eeglab2023.1/functions/supportfiles/channel_location_files/philips_neuro/GSN-HydroCel-128.sfp','filetype','autodetect'});
 end
 
 % push existing data onto stack. Update <data.EEG> to tmp.
@@ -673,9 +697,6 @@ if ~isfield(data,'EEG') || isempty(data.EEG.data)
     data.pbFlatline.BackgroundColor = [1 .6 .6];
     return
 end
-
-% end of function ---------------------------------------------------------
-
 
 % open bad channel gui for additional selection of bad channels. Open
 % modal! Wait for window to close. Data will be collected upon passing the
@@ -1415,9 +1436,16 @@ end
 
 if isfield(tmp, 'eventlist')
     uniqueevt = tmp.eventlist;
+    if isnumeric(tmp.epoch(1).eventtype)
+        numflag = true;
+    end
     evtlist = {};
     for ep=1:length(tmp.epoch)
-        ndx = find(ismember(tmp.eventlist,tmp.epoch(ep).eventtype));
+        try
+            ndx = find(ismember(tmp.eventlist, tmp.epoch(ep).eventtype));
+        catch
+            ndx = [];
+        end
         if ~isempty(ndx)
             evtlist{ep} = tmp.eventlist{ndx};
         else
@@ -2631,6 +2659,116 @@ end
 
 load('.chanlocs.mat') % loads Chanlocs EEG struct
 
+remove = setdiff({data.EEG.chanlocs.labels}, {Chanlocs.chanlocs.labels});
+if length(remove)>0
+    AddToListbox(data.listboxStdout, 'Removing channels not in imputation list');
+    for r=1:length(remove)
+        AddToListbox(data.listboxStdout, sprintf(' %s', remove{r}));
+    end
+    data.EEG = pop_select(data.EEG, 'nochannel', remove);
+end
+
+impute = setdiff({Chanlocs.chanlocs.labels}, {data.EEG.chanlocs.labels});
+AddToListbox(data.listboxStdout, sprintf('Imputing %d channels', length(impute)))
 data.EEG = pop_interp(data.EEG, Chanlocs.chanlocs, 'spherical');
 
-guidata(hObject,data);
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Impute channels';
+guidata(hObject, data);
+
+
+
+% --- Executes on button press in pbBatch.
+function pbBatch_Callback(hObject, eventdata, handles)
+% hObject    handle to pbBatch (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+h = figRunbatch(hObject);
+uiwait(h);
+
+
+% --- Executes on button press in pushbuttonImputeAll.
+function pushbuttonImputeAll_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonImputeAll (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+impute = data.EEG;
+AddToListbox(data.listboxStdout, 'Replacing all channels with imputed version');
+for ch=1:EEG.nbchan
+    tmp = pop_interp(data.EEG, ch, 'spherical');
+    impute.data(ch,:) = tmp.data(ch,:);
+end
+
+data.EEG = impute;
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Impute all channels';
+guidata(hObject, data);
+
+
+% --- Executes on button press in pushbutton38.
+function pushbutton38_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbutton38 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+data = guidata(hObject);
+
+AddToListbox(data.listboxStdout, '- removing first 1 second of data');
+
+% as always, work on tmp in stead of data.EEG
+tmp = pop_select(data.EEG, 'rmtime', [0 1]);
+
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Remove first second';
+data.EEG = tmp;
+guidata(hObject, data);
+
+
+% --- Executes on button press in pbMaskEvt.
+function pbMaskEvt_Callback(hObject, eventdata, handles)
+% hObject    handle to pbMaskEvt (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+AddToListbox(data.listboxStdout, '- masking all events types to 0-255 (numeric or not)');
+
+% as always, work on tmp in stead of data.EEG
+tmp = data.EEG;
+for e=1:length(tmp.event)
+    ev = tmp.event(e).type;
+    evclass = class(ev);
+    if isnumeric(ev)
+        if ev==round(ev)
+            ev = bitand(ev, 255);
+        end
+    elseif ~isnan(str2double(ev))
+        ev = num2str(bitand(str2double(ev), 255));
+    end
+    tmp.event(e).type = ev;
+end
+
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Massk events'' to first 8 bits';
+data.EEG = tmp;
+guidata(hObject, data);
+
+
+% --- If Enable == 'on', executes on mouse press in 5 pixel border.
+% --- Otherwise, executes on mouse press in 5 pixel border or over pushbuttonReref.
+function pushbuttonReref_ButtonDownFcn(hObject, eventdata, handles)
+% hObject    handle to pushbuttonReref (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)

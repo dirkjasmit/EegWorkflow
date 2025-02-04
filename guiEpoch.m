@@ -67,6 +67,13 @@ handles.Parent = varargin{2};
 handles.EEG = varargin{1};
 handles.checkboxSpecialPRT.Value = 0;
 
+% convert all numeric events to string
+for e=1:length(handles.EEG.event)
+    if isnumeric(handles.EEG.event(e).type)
+        handles.EEG.event(e).type = num2str(handles.EEG.event(e).type);
+    end
+end
+
 % Update handles structure
 guidata(hObject, handles);
 
@@ -83,7 +90,12 @@ function guiEpoch_FillCheckbox(hObject, handles)
 
 % data = guidata(hObject); <<- not necessary, already in handles
 
-evt = unique({handles.EEG.event.type});
+if isnumeric(handles.EEG.event(1).type)
+    evt = unique([handles.EEG.event.type]);
+    evt = arrayfun(@num2str, evt, "UniformOutput", false);
+else
+    evt = unique({handles.EEG.event.type});
+end
 if handles.checkboxSpecialPRT.Value
     evt = setdiff(evt,arrayfun(@(x)sprintf('%d',x),1:218,'uniform',false));
 else

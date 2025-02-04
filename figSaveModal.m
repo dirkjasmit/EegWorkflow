@@ -22,7 +22,7 @@ function varargout = figSaveModal(varargin)
 
 % Edit the above text to modify the response to help figSaveModal
 
-% Last Modified by GUIDE v2.5 28-Feb-2024 18:08:27
+% Last Modified by GUIDE v2.5 17-Oct-2024 15:42:33
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -105,7 +105,7 @@ editSubject_Callback(hObject,eventdata,guidata(hObject));
 
 
 
-% 
+% Helper function
 function SetUIControlData(hObject, strlist)
 
 ch = get(hObject,'ch');
@@ -255,6 +255,8 @@ data.textFilename.String = data.FN;
 
 guidata(hObject, data);
 
+
+
 % --- Executes during object creation, after setting all properties.
 function editSubject_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to editSubject (see GCBO)
@@ -293,7 +295,7 @@ function popupmenuProject_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
-T = readtable('.projectStrings.ini', "FileType", 'text', "delimiter", "\t");
+T = readtable('projectStrings.ini', "FileType", 'text', "delimiter", "\t");
 set(hObject, 'String', T.ProjectName);
 
 

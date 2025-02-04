@@ -144,7 +144,35 @@ ylim(hndlAxes,[-50, data.nbchan*50+50]);
 set(hndlAxes,'xtick',(1:data.srate:data.srate*6),'xticklabel',1:7);
 set(hndlAxes,'ytick',(1:50:data.nbchan*50),'yticklabel',data.labels);
 
+% insert chatGPT code here
+ax = hndlAxes;
+
+% Get the current tick positions and labels
+yticks = get(ax, 'YTick');
+yticklabels = get(ax, 'YTickLabel');
+x = xlim(ax);
+
+% Repeat for y-ticks
+for i = 1:length(yticks)
+    txt = text(x(1), yticks(i), yticklabels(i,:), 'Parent', ax, ...
+               'VerticalAlignment', 'middle', 'HorizontalAlignment', 'right', ...
+               'Color', 'none', 'FontSize', ax.FontSize-4, 'ButtonDownFcn', @tickLabelClick);
+    set(txt, 'UserData', yticklabels(i,:));  % Store label text in UserData for callback access
+end
+
+
 drawnow;
+
+
+
+% create your own event handler for 
+% Define the callback function for tick label clicks
+function tickLabelClick(hndl)
+
+% This function will be called whenever a tick label is clicked
+clickedLabel = get(hndl, 'UserData');  % Retrieve the tick label from UserData
+disp(['You clicked on tick label: ', clickedLabel]);
+
 
 
 
@@ -434,6 +462,7 @@ plotdata(data.axesPSD, data);
 guidata(hObject, data);
 
 
+
 % --- Executes on slider movement.
 function slideScroll_Callback(hObject, eventdata, handles)
 % hObject    handle to slideScroll (see GCBO)
@@ -472,6 +501,9 @@ function axesPSD_ButtonDownFcn(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 data = guidata(hObject);
+data.x="hellow"
+
+beep()
 
 
 % --- Executes on button press in pushbuttonExclude.
