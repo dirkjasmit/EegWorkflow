@@ -64,7 +64,7 @@ guidata(hObject, handles);
 if length(varargin)<1
     error('Must pass an EEG struct to be saved.')
 end
-if length(varargin)>2
+if length(varargin)>3
     error('Too many parameters passed')
 end
 
@@ -77,14 +77,34 @@ catch
     warning('Initialization file not found. Will be created on close.')
 end
 
+if length(varargin)==3
+    fs = varargin{3};
+    try
+        chlist = hObject.Children;
+    catch
+        return
+    end
+    
+    for ch=1:length(chlist)
+        if isprop(chlist(ch), 'fontsize')
+            try
+                set(chlist(ch), 'fontsize', fs);
+            catch
+                warning('Setting fontsize failed')
+            end
+        end
+    end
+end
 
 % get the object data (object is the modal figure). Save the passed
 % parameters (EEG struct and filename). Overrides the saved uitcontrol data
 % for some uicontrols
 data = guidata(hObject);
 data.EEG = varargin{1};
-if length(varargin)==2
+if length(varargin)>1
     data.Filename = varargin{2};
+    [a,b,c]=fileparts(varargin{2});
+    data.textFilenameIn.String = [b c];
 end
 
 
@@ -474,8 +494,11 @@ function figure1_CloseRequestFcn(hObject, eventdata, handles)
 
 % Hint: delete(hObject) closes the figure
 
-strlist = GetUIControlData(hObject);
-writetable(strlist,sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text')
+try
+    strlist = GetUIControlData(hObject);
+    writetable(strlist,sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text')
+catch
+end
 
 delete(hObject);
 

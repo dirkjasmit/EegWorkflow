@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 04-Feb-2025 08:55:53
+% Last Modified by GUIDE v2.5 11-Feb-2025 15:16:40
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -202,44 +202,64 @@ else
     zz = strsplit(FileName,'.');
     switch zz{end}
         case 'cnt'
-            data.EEG = pop_loadeep_v4([PathName FileName], 'triggerfile', 'on');
-            data.EEG.filename = [PathName FileName];
-            tmp = data.EEG;
-
-            % insert boundaries and events
-            evtcnt = 0;
-            for ev=1:length(tmp.event)
-                if tmp.event(ev).latency>1
-                    evtcnt = evtcnt + 1;
-                    if strcmp(tmp.event(ev).type,'__')
-                        typ = 'boundary';
-                    else
-                        typ = strtrim(tmp.event(ev).type);
-                    end
-                    tmp.event(evtcnt).type = typ;
-                    tmp.event(evtcnt).latency = data.EEG.event(ev).latency;
-                    tmp.event(evtcnt).duration = data.EEG.event(ev).duration;
+            try
+                cLoadANTNeuro = true;
+                data.EEG = pop_loadeep_v4([PathName FileName], 'triggerfile', 'on');
+            catch E
+                if strcmpi(E.message, 'Error getting samples')
+                    cLoadANTNeuro = false;
+                    % try loading Neuroscan
+                    data.EEG = pop_loadcnt([PathName FileName] , 'dataformat', 'auto', 'memmapfile', '');
                 end
             end
+                
+            % add filename 
+            data.EEG.filename = [PathName FileName];
 
-            % check for event length (>10 events), start of first event named 31 (>100 sec), and
-            % existence of a boundary event. If not, search for a "jump" in
-            % activity just before the first event and put in a boundary
-            % event (segment will not work otherwise.)
-            if length(tmp.event)>10 && ~isempty(str2num(tmp.event(1).type)) ...
-                    && tmp.event(1).latency>100*tmp.srate ...
-                    && sum(strcmpi('boundary',{tmp.event.type}))==0
-                sig = tmp.data(:,(tmp.event(1).latency-tmp.srate*4):tmp.event(1).latency);
-                z = abs(zscore(mean(abs(diff(sig')')))');
-                ndx = tmp.event(1).latency-tmp.srate*4 + min(find(z>10)) + 0;
-                dummy = tmp.event(1);
-                dummy.type = 'boundary';
-                dummy.latency = ndx;
-                dummy.duration = 0;
-                tmp.event = cat(1,dummy,tmp.event(:));
-            end        
-            data.EEG = tmp;
-            AddToListbox(data.listboxStdout, 'Read ANT CNT file')
+            if cLoadANTNeuro
+                % some event editing needs to be done for ANT Neuro files
+                
+                % copy to tmp variable and work on that
+                tmp = data.EEG;
+                
+                % insert boundaries and events
+                evtcnt = 0;
+                for ev=1:length(tmp.event)
+                    if tmp.event(ev).latency>1
+                        evtcnt = evtcnt + 1;
+                        if strcmp(tmp.event(ev).type,'__')
+                            typ = 'boundary';
+                        else
+                            typ = strtrim(tmp.event(ev).type);
+                        end
+                        tmp.event(evtcnt).type = typ;
+                        tmp.event(evtcnt).latency = data.EEG.event(ev).latency;
+                        tmp.event(evtcnt).duration = data.EEG.event(ev).duration;
+                    end
+                end
+
+                % check for event length (>10 events), start of first event named 31 (>100 sec), and
+                % existence of a boundary event. If not, search for a "jump" in
+                % activity just before the first event and put in a boundary
+                % event (segment will not work otherwise.)
+                if length(tmp.event)>10 && ~isempty(str2num(tmp.event(1).type)) ...
+                        && tmp.event(1).latency>100*tmp.srate ...
+                        && sum(strcmpi('boundary',{tmp.event.type}))==0
+                    sig = tmp.data(:,(tmp.event(1).latency-tmp.srate*4):tmp.event(1).latency);
+                    z = abs(zscore(mean(abs(diff(sig')')))');
+                    ndx = tmp.event(1).latency-tmp.srate*4 + min(find(z>10)) + 0;
+                    dummy = tmp.event(1);
+                    dummy.type = 'boundary';
+                    dummy.latency = ndx;
+                    dummy.duration = 0;
+                    tmp.event = cat(1,dummy,tmp.event(:));
+                end        
+                data.EEG = tmp;
+                AddToListbox(data.listboxStdout, 'Read ANT CNT file')
+                
+            else
+                AddToListbox(data.listboxStdout, 'Read Neuroscan CNT file')
+            end
 
         case 'set'
             data.EEG = pop_loadset([PathName FileName]);
@@ -348,7 +368,7 @@ end
 AddToListbox(data.listboxStdout, 'Reading channel locations.');
 tmp = data.EEG;
 
-if data.checkboxAddAFz.Value 
+if data.checkboxAddCpz.Value 
     if sum(strcmpi({tmp.chanlocs.labels},'CPz'))==0
         AddToListbox(data.listboxStdout, ' - Adding CPz channel as flatline.');
         tmp.data(end+1,:) = 0;
@@ -1588,10 +1608,8 @@ function pushbuttonSave_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 tmp = data.EEG;
 
-
-
 % open modal dialog and wait
-h = figSaveModal(tmp, tmp.filename);
+h = figSaveModal(tmp, tmp.filename, data.fontsize);
 uiwait(h);
 
 
@@ -1712,11 +1730,16 @@ AddToListbox(data.listboxStdout, sprintf('Removing channels with <%.1f stdev.', 
 SD = std(data.EEG.data(:,:)');
 ndx = find(SD < crit);
 if ~isempty(ndx)
-    AddToListbox(data.listboxStdout, sprintf('  - Removing %d channels ', length(ndx)));
+    AddToListbox(data.listboxStdout, sprintf('- Removing %d channels ', length(ndx)));
     tmp = pop_select(tmp,'nochannel',ndx);
 else
-    AddToListbox(data.listboxStdout, '  - NO channels removed');
+    AddToListbox(data.listboxStdout, '- NO channels removed');
 end
+
+if data.checkboxFlatlineEpochs.Value
+    AddToListbox(data.listboxStdout, '- Remove flatline periods');
+end
+    
 
 % push existing data onto stack. Update <data.EEG> to tmp.
 data.Stack{length(data.Stack)+1} = data.EEG;
@@ -1830,19 +1853,22 @@ end
 AddToListbox(data.listboxStdout, sprintf('Rereferencing data (%s)',data.popupmenuReref.String{data.popupmenuReref.Value}));
 
 try
-switch data.popupmenuReref.Value
-    case 1, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),'CPZ')));
-    case 2, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'M1','M2'})));
-    case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
-    case 4, tmp = eeg_REST_reref(tmp);
-end
+    switch data.popupmenuReref.Value
+        case 1, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),'CPZ')));
+        case 2, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'M1','M2'})));
+        case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
+        case 4, tmp = eeg_REST_reref(tmp);
+        case 5, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
+    end
 catch
+    AddToListbox(data.listboxStdout, sprintf('WARNING! Need to run ICA first'));
     tmp = pop_runica(tmp,'icatype','binica','pca',16);
     switch data.popupmenuReref.Value
         case 1, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),'CPZ')));
         case 2, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'M1','M2'})));
         case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
         case 4, error('not yet finsihed')
+        case 5, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
     end
 end
 
@@ -1858,13 +1884,13 @@ pause(0.005);
 
 
 
-% --- Executes on button press in checkboxAddAFz.
-function checkboxAddAFz_Callback(hObject, eventdata, handles)
-% hObject    handle to checkboxAddAFz (see GCBO)
+% --- Executes on button press in checkboxAddCpz.
+function checkboxAddCpz_Callback(hObject, eventdata, handles)
+% hObject    handle to checkboxAddCpz (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% Hint: get(hObject,'Value') returns toggle state of checkboxAddAFz
+% Hint: get(hObject,'Value') returns toggle state of checkboxAddCpz
 
 
 % --- Executes on button press in checkbox11.
@@ -1938,6 +1964,64 @@ system('rm binica*.ch')
 set(hObject,'backgroundcolor',[.9 .8 .6])
 
 
+
+% --- Executes on button press in pushbuttonAltInitialEOG.
+function pushbuttonAltInitialEOG_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonAltInitialEOG (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+set(hObject,'backgroundcolor',[.3 .6 .3])
+pause(0.005);
+
+AddToListbox(data.listboxStdout, 'Removing EOG with *EOG* channels');
+tmp = data.EEG;
+tmp.data = detrend(tmp.data','constant')';
+
+eogndx = FindSetNdx({tmp.chanlocs.labels}, '*eog*', 'match','pattern');
+if isempty(eogndx)
+    AddToListbox(data.listboxStdout, 'WARNING! could not match EOG channels. Nothing performed');
+    return
+end
+
+try
+    tmp = pop_runica(tmp,'icatype','binica','pca',16);
+catch E
+    tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',16);
+end
+
+if isempty(tmp.icaact)
+    AddToListbox(data.listboxStdout, '- Recalculate ICA activations.');
+    tmp.icaact = icaact(tmp.data, tmp.icaweights*tmp.icasphere);
+end
+
+AddToListbox(data.listboxStdout, '- Match eye ICs to EOG channels');
+
+% determine eye ICs after some extra lowpass filtering
+EYE = filter_fir(tmp.data(eogndx,:), tmp.srate, 0, 20, 3.0, true);
+ICs = filter_fir(tmp.icaact(:,:), tmp.srate, 0, 20, 3.0, true);
+R = abs(corr(EYE',ICs'));
+icdeselect = any(R>.66,1);
+AddToListbox(data.listboxStdout, sprintf('- Removing %d ICs',sum(icdeselect)));
+if sum(icdeselect)>0
+    % use the source subtraction method to remove ICs, NOT the pop_select
+    % method that reduces the dimensionality of the data.
+    tmp.data = tmp.data - tmp.icawinv(:,icdeselect)*tmp.icaact(icdeselect,:);
+end
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Initial EOG (alt method)';
+data.EEG = tmp;
+guidata(hObject, data);
+
+set(hObject,'backgroundcolor',[.9 .8 .6])
+
+
+
+
 % --- Executes on button press in pushbuttonClean.
 function pushbuttonClean_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbuttonClean (see GCBO)
@@ -1951,7 +2035,7 @@ pause(0.005);
 AddToListbox(data.listboxStdout, 'Clean data usig clean_rawdata');
 
 tmp = pop_clean_rawdata(data.EEG, ...
-    'FlatlineCriterion','off','LineNoiseCriterion','off','Highpass','off',...
+    'FlatlineCriterion','on','LineNoiseCriterion','off','Highpass','off',...
     'ChannelCriterion', data.sliderChannelMinR.Value, ...
     'BurstCriterion',data.sliderBurstCriterion.Value,...
     'WindowCriterion', 0.25 ,... % default value
@@ -1970,9 +2054,9 @@ set(data.pushbuttonICA, 'backgroundcolor', [.6 1 .6]);
 pause(0.005);
 
 
-% --- Executes on button press in pushbuttonAAR.
-function pushbuttonAAR_Callback(hObject, eventdata, handles)
-% hObject    handle to pushbuttonAAR (see GCBO)
+% --- Executes on button press in pushbuttonAARWinSec.
+function pushbuttonAARWinSec_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonAARWinSec (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 data = guidata(hObject);
@@ -1982,7 +2066,9 @@ pause(0.005);
 AddToListbox(data.listboxStdout, 'Clean data of muscle actvit using AAR in 40s windows.');
 
 tmp = data.EEG;
-tmp = pop_autobssemg(tmp, 40, 40, 'bsscca', {'eigratio', [1000000]}, 'emg_psd', {'ratio', [10],'fs', [256],'femg', [15],'estimator',spectrum.welch,'range', [0  34]});
+ws = data.sliderAARWinSec.Value;
+ss = data.sliderAARShift.Value;
+tmp = pop_autobssemg(tmp, ws, ss, 'bsscca', {'eigratio', [1000000]}, 'emg_psd', {'ratio', [10],'fs', [256],'femg', [15],'estimator',spectrum.welch,'range', [0  34]});
 
 % push existing data onto stack. Update <data.EEG> to tmp.
 data.Stack{length(data.Stack)+1} = data.EEG;
@@ -2350,7 +2436,7 @@ function sliderFlatlineSD_Callback(hObject, eventdata, handles)
 % Hints: get(hObject,'Value') returns position of slider
 %        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
 data = guidata(hObject);
-data.textFilterSD.String = sprintf('%.1f', get(hObject,'Value'));
+data.textFilterSD.String = sprintf('SD<%.1f', get(hObject,'Value'));
 
 % --- Executes during object creation, after setting all properties.
 function sliderFlatlineSD_CreateFcn(hObject, eventdata, handles)
@@ -2504,22 +2590,22 @@ end
 % always work with a tmp variable.
 tmp = data.EEG;
 crit = data.sliderExcessive.Value;
-AddToListbox(data.listboxStdout, sprintf('Removing channels with <%.1f stdev.', crit));
+AddToListbox(data.listboxStdout, sprintf('Removing channels with Z>%.1f.', crit));
 
 % get very low StdDev for channels
 SD = std(data.EEG.data(:,:)');
 Z = (SD-mean(SD))./std(SD);
 ndx = find(Z > crit);
 if ~isempty(ndx)
-    AddToListbox(data.listboxStdout, sprintf('  - Removing %d channels ', length(ndx)));
+    AddToListbox(data.listboxStdout, sprintf('- Removing %d channels ', length(ndx)));
     tmp = pop_select(tmp,'nochannel',ndx);
 else
-    AddToListbox(data.listboxStdout, '  - NO channels removed');
+    AddToListbox(data.listboxStdout, '- NO channels removed');
 end
 
 % push existing data onto stack. Update <data.EEG> to tmp.
 data.Stack{length(data.Stack)+1} = data.EEG;
-data.StackLabel{length(data.Stack)+1} = 'Excessive channel SD';
+data.StackLabel{length(data.Stack)+1} = 'Excessive channel SD z-score';
 data.EEG = tmp;
 guidata(hObject, data);
 
@@ -2609,7 +2695,7 @@ function sliderExcessive_Callback(hObject, eventdata, handles)
 % Hints: get(hObject,'Value') returns position of slider
 %        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
 data = guidata(hObject);
-data.textExcessive.String = sprintf('%.1f', get(hObject,'Value'));
+data.textExcessive.String = sprintf('Z>%.1f', get(hObject,'Value'));
 
 % --- Executes during object creation, after setting all properties.
 function sliderExcessive_CreateFcn(hObject, eventdata, handles)
@@ -2772,3 +2858,72 @@ function pushbuttonReref_ButtonDownFcn(hObject, eventdata, handles)
 % hObject    handle to pushbuttonReref (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
+
+
+% --- Executes on slider movement.
+function sliderAARWinSec_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderAARWinSec (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+
+
+data = guidata(hObject); 
+data.textAARWinSec.String = sprintf('win %ds',round(get(hObject, "Value")));
+
+
+% --- Executes during object creation, after setting all properties.
+function sliderAARWinSec_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderAARWinSec (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+
+
+% --- Executes on slider movement.
+function sliderAARShift_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderAARShift (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+
+data = guidata(hObject); 
+data.textAARShift.String = sprintf('shift %.1fs',get(hObject, "Value"));
+
+
+% --- Executes during object creation, after setting all properties.
+function sliderAARShift_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderAARShift (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+
+
+% --- Executes on button press in checkboxFlatlineEpochs.
+function checkboxFlatlineEpochs_Callback(hObject, eventdata, handles)
+% hObject    handle to checkboxFlatlineEpochs (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkboxFlatlineEpochs
+
+
+% --- Executes on button press in pbViewPSD.
+function pbViewPSD_Callback(hObject, eventdata, handles)
+% hObject    handle to pbViewPSD (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+AddToListbox(data.listboxStdout, '*** WARNING *** not implemented yet');
