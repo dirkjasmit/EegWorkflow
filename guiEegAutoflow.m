@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 11-Feb-2025 15:16:40
+% Last Modified by GUIDE v2.5 28-Feb-2025 16:27:41
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -84,14 +84,6 @@ end
 % initialise data
 data.EEG = eeg_emptyset();
 data.Stack = {};
-
-AddToListbox(data.listboxStdout, 'trying to load a sample file.')
-filename = '/Volumes/FiveTB/Documents/Onderzoeksmap/Misofonie_ArjenSchroder/EEG/EEG_misophonia_MMN/C004/C004.cnt';
-try
-    data.EEG = pop_loadeep_v4(filename);
-catch
-    AddToListbox(data.listboxStdout, '  *** Warning *** loading sample file failed.')
-end
 
 % set the values of the uicontrols
 try
@@ -1626,12 +1618,42 @@ set(hObject,'backgroundcolor', [.3 .6 .3])
 pause(0.005);
 data = guidata(hObject);
 
+AddToListbox(data.listboxStdout,'Resampling data');
+
 tmp = data.EEG;
 
 % resample if sampling rate different
-NewSrate = str2num(data.popupmenuRerefFreq.String{data.popupmenuRerefFreq.Value});
-if data.popupmenuRerefFreq.Value>1 && NewSrate~=data.EEG.srate
-    tmp = pop_resample(tmp, NewSrate);
+fs_new = str2num(data.popupmenuRerefFreq.String{data.popupmenuRerefFreq.Value});
+if ~data.popupmenuRerefFreq.Value>1 && NewSrate~=data.EEG.srate
+    AddToListbox(data.listboxStdout,'*** warning *** no change in sampling rate.');
+    return
+end
+
+% check what alogorithm to use
+fs_old = tmp.srate;
+isint = (fs_new/fs_old==round(fs_new/fs_old)) | (fs_old/fs_new==round(fs_old/fs_new));
+if ~isint
+    AddToListbox(data.listboxStdout,'*** warning *** resampling with spline (noninteger divide)');
+end
+
+% do the resampling
+if isint
+    tmp = pop_resample(tmp, fs_new);
+else
+    dummy = pop_resample(tmp, fs_new);
+    t_old = (0:tmp.pnts-1)/fs_old;
+    t_new = (0:dummy.pnts-1)/fs_new;
+
+    tmp.data = dummy.data;
+    % Resample using spline interpolation
+    for ch=1:tmp.nbchan
+        tmp.data(ch,:) = interp1(t_old, data.EEG.data(ch,:), t_new, 'spline');  
+    end
+    
+    tmp.srate = fs_new;
+    tmp.times = dummy.times;
+    tmp.xmax = dummy.xmax;
+    tmp.pnts = dummy.pnts;
 end
 
 data.Stack{length(data.Stack)+1} = data.EEG;
@@ -2757,6 +2779,7 @@ end
 impute = setdiff({Chanlocs.chanlocs.labels}, {data.EEG.chanlocs.labels});
 AddToListbox(data.listboxStdout, sprintf('Imputing %d channels', length(impute)))
 data.EEG = pop_interp(data.EEG, Chanlocs.chanlocs, 'spherical');
+data.EEG.nbchan = size(data.EEG.data,1);
 
 % push existing data onto stack. Update <data.EEG> to tmp.
 data.Stack{length(data.Stack)+1} = data.EEG;
@@ -2784,7 +2807,7 @@ function pushbuttonImputeAll_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 impute = data.EEG;
 AddToListbox(data.listboxStdout, 'Replacing all channels with imputed version');
-for ch=1:EEG.nbchan
+for ch=1:data.EEG.nbchan
     tmp = pop_interp(data.EEG, ch, 'spherical');
     impute.data(ch,:) = tmp.data(ch,:);
 end
@@ -2926,4 +2949,153 @@ function pbViewPSD_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-AddToListbox(data.listboxStdout, '*** WARNING *** not implemented yet');
+data = guidata(hObject);
+tmp = data.EEG;
+chanlocs = tmp.chanlocs;
+
+AddToListbox(data.listboxStdout, 'Plotting PSD');
+
+lo = data.sliderLow.Value;
+hi = data.sliderHigh.Value;
+
+[P,fs] = calc_PSD(tmp);
+
+% Create figure if needed, otherwise put the figure in front
+if ~isfield(data, 'figPSD') || isempty(data.figPSD) || ~isstruct(data.figPSD) || ~isfield(data.figPSD, 'fig') || ~isvalid(data.figPSD.fig)
+    AddToListbox(data.listboxStdout, '- creating figure');
+    if ~isfield(data, 'figPSD')
+        data.figPSD = struct;
+    end
+    fig = figure('Name', 'plot Power Spectrum', 'Tag', 'figPSD', 'NumberTitle', 'off', ...
+                 'Position', [100, 100, 700, 500]); % Adjust size as needed
+    % Create a frame (uipanel), checkbox, and create axes inside the panel
+    frame = uipanel('Parent', fig, 'Title', 'Power spectrum', 'Tag', 'framePSD', ...
+                    'Position', [0.005, 0.1, .98, 0.9]); % [x, y, width, height]
+    ax = axes('Parent', frame, 'Position', [0.07, 0.1, .91, 0.88], 'Tag', 'axesPSD'); % Adjust within panel
+    checkbox = uicontrol('Style', 'checkbox', 'Parent', fig, 'Tag', 'cbSummary', ...
+                         'String', 'Summarize into regions', 'Fontsize', data.fontsize, ...
+                         'Units', 'normalized', ...
+                         'Position', [0.05, 0.03, 0.4, 0.05], ...
+                         'Callback', @(src, event) checkbox_callback(src, ax, fs, P, chanlocs, data.fontsize+1));
+    data.figPSD.fig = fig;
+    data.figPSD.ax = ax;
+    data.figPSD.checkbox = checkbox;
+    
+else
+    AddToListbox(data.listboxStdout, '- activating figure');
+    fig = data.figPSD.fig;
+    ax = data.figPSD.ax;
+    checkbox = data.figPSD.checkbox;
+    figure(fig);
+end
+
+checkbox_callback(checkbox, ax, fs, P, chanlocs, data.fontsize+1);
+
+guidata(hObject, data);
+
+
+function [P,fs] = calc_PSD(EEG)
+
+if size(EEG.data,3)>1
+    win = ones(1,size(tmp.data,2));
+    [P, fs] = pfft(EEG.data(:,:)', EEG.srate, win, 0);
+else
+    % windows with 
+    win = hanning(EEG.srate*2);
+    [P, fs] = pfft(EEG.data(:,:)', EEG.srate, win, .5);
+end
+
+
+% Callback function for checkbox
+function checkbox_callback(hObject, ax, fs, P, chanlocs, fontsize)
+
+    % hardcoded limits
+    ndx = fs>=1 & fs<45;  
+    
+    % plot either all channels or a summary
+    if get(hObject,'Value')==0
+        plot(ax, fs(ndx), 10*log10(P(ndx,:)));
+        
+    else
+        numlabels = {'theta','radius','X','Y','Z','sph_theta','sph_phi','sph_radius'};
+        tab = struct2table(chanlocs);
+        % repair: convert cell array of double to double with missings
+        for lab=1:length(numlabels)
+            if ismember(numlabels{lab}, tab.Properties.VariableNames)
+                values = cellfun(@(x)ifthen(isempty(x), nan, double(x)), tab.(numlabels{lab}));
+                tab.(lab) = values;
+            end
+        end
+        
+        relX = tab.X ./ sqrt(tab.X.^2+tab.Y.^2+tab.Z.^2);
+        relY = tab.Y ./ sqrt(tab.X.^2+tab.Y.^2+tab.Z.^2);
+        % relZ = tab.Z ./ sqrt(tab.X.^2+tab.Y.^2+tab.Z.^2);
+        
+        ant    = relX>=-1E-5;
+        post   = ~ant;
+        medial = abs(relY)<.41;
+        left   = relY>=.41;
+        right  = relY<=.41;
+        
+        regP = nan(size(P,1),6);
+        regP(:,1) = mean(P(:,ant & left),2);
+        regP(:,2) = mean(P(:,ant & medial),2);
+        regP(:,3) = mean(P(:,ant & right),2);
+        regP(:,4) = mean(P(:,post & left),2);
+        regP(:,5) = mean(P(:,post & medial),2);
+        regP(:,6) = mean(P(:,post & right),2);
+
+        plot(ax, fs(ndx), 10*log10(regP(ndx,:)));
+        legend('ant left','ant medial','ant right','post left','post medial','post right')
+ 
+    end
+    set(gca, 'fontsize', fontsize+2)
+    xlabel('frequency (Hz)')
+    ylabel('Power({\mu}V^2/Hz)')   
+
+   
+
+
+% --- Executes on button press in pbDFA.
+function pbDFA_Callback(hObject, eventdata, handles)
+% hObject    handle to pbDFA (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+data = guidata(hObject);
+tmp = data.EEG;
+
+AddToListbox(data.listboxStdout, 'Plotting DFA of alpha oscillations');
+
+lo = 7.5;
+hi = 13;
+
+exp = dfa(abs(hilbert(filter_fir(tmp.data(:,:), tmp.srate, lo, hi, 3.0, true)')), tmp.srate);
+
+
+% Create figure if needed, otherwise put the figure in front
+if ~isfield(data, 'figDFA') || isempty(data.figDFA) || ~isstruct(data.figDFA) || ~isfield(data.figDFA, 'fig') || ~isvalid(data.figDFA.fig)
+    AddToListbox(data.listboxStdout, '- creating figure');
+    if ~isfield(data, 'figDFA')
+        data.figDFA = struct;
+    end
+    fig = figure('Name', 'plot DFA topoplot', 'Tag', 'figDFA', 'NumberTitle', 'off', ...
+                 'Position', [50, 50, 300, 250]); % Adjust size as needed
+    ax = axes('Parent', fig); 
+    data.figDFA.fig = fig;
+    data.figDFA.ax = ax;
+    
+else
+    AddToListbox(data.listboxStdout, '- activating figure');
+    fig = data.figDFA.fig;
+    ax = data.figDFA.ax;
+    figure(fig);
+end
+
+tmp.nbchan = size(tmp.data,1);
+clf;
+topoplot(exp, tmp.chanlocs, 'maplimits', [.5 .8]);
+colorbar;
+
+guidata(hObject, data);
