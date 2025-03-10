@@ -370,7 +370,7 @@ if data.checkboxAddCpz.Value
         tmp.icaweights = [];
         tmp.icawinv = [];
         tmp.icasphere = [];
-        tmp = eeg_checkset(data.EEG);
+        tmp = eeg_checkset(tmp);
     else
         AddToListbox(data.listboxStdout, 'Warning: CPz already in data. Not adding a flatine CPz reference channel.');
     end 
