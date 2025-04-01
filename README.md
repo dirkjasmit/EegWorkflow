@@ -1,3 +1,7 @@
+
+See copyright atatements below-------------------------------
+
+
 All copyrights of the software are reserved by the Key Laboratory for NeuroInformation of Ministry of Education, School of Life Science and Technology, University of Electronic Science and Technology of China. This software is for non-commercial use only. It is freeware but not in the public domain.
 
 For more see http://www.neuro.uestc.edu.cn/rest/
