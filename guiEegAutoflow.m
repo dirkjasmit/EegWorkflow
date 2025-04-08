@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 28-Feb-2025 16:27:41
+% Last Modified by GUIDE v2.5 21-Mar-2025 10:31:02
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -65,14 +65,16 @@ guidata(hObject, handles);
 
 data = guidata(hObject);
 
-AddToListbox(data.listboxStdout, '  *** Warning *** EEGLAB with specfic plugins is required')
+AddToListbox(data.listboxStdout, '  *** Warning *** EEGLAB with specific plugins is required')
 AddToListbox(data.listboxStdout, '   - EEGLAB V2020 has been tested, requires signal processing toolbox')
 AddToListbox(data.listboxStdout, '   - AAR')
 AddToListbox(data.listboxStdout, '   - CleanRawdata')
 AddToListbox(data.listboxStdout, '   - ICLabel')
+AddToListbox(data.listboxStdout, '   - file import plugins (ANT, Biosemi, EDF)')
+AddToListbox(data.listboxStdout, '   - and several support functions')
 
 if isempty(which("eeglab.m"))
-    AddToListbox(data.listboxStdout, '*** warning *** cannot find EEGLAB. Please locate.')
+    AddToListbox(data.listboxStdout, '*** warning *** cannot find EEGLAB. Please activate locate.')
     data.listboxStdout;
     if strcmpi(E.identifier,'MATLAB:UndefinedFunction')
         filepath = uigetdir(pwd, "Locate EEGLAB");
@@ -85,11 +87,24 @@ end
 data.EEG = eeg_emptyset();
 data.Stack = {};
 
-% set the values of the uicontrols
+% set the values of the uicontrols. Read 
+if ismac()
+    data.INIDIR = '~/Application Support/Matlab_EegAutoFlow';
+elseif isunix
+    data.INIDIR = '~/.config/Matlab_EegAutoFlow';
+elseif ispc
+    data.INIDIR = '~/AppData/Matlab_EegAutoFlow';
+else
+    warning('unknown system')
+    data.INIDIR = './';
+end
+
+% read the defualt values
 try
-    strlist = readtable(sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text');
+    strlist = readtable(sprintf('%s/%s.ini', data.INIDIR, get(hObject,'name')), ...
+        'delimiter','\t', 'filetype','text');
     SetUIControlData(hObject, strlist);
-catch
+catch E
     warning('Initialization file not found. Will be created on close.')
 end
 
@@ -165,13 +180,13 @@ hObject.BackgroundColor = [.3 .6 .3];
 
 FilterSpec = {'*.*', 'All files'
     '*.bdf', 'Biosemi'
-    '*.cnt', 'ANT Neuro'
+    '*.cnt', 'ANT Neuro / Neuroscan'
     '*.edf', 'European data format'
     '*.set', 'EEGLAB'
     '*.vhdr', 'BrainVision'
     };
-fid = fopen('.EegWorkflow_DefaultPath.ini','r');
-DefaultPath = ".";
+fid = fopen(sprintf('%s/.EegWorkflow_DefaultPath.ini', data.INIDIR), 'r');
+DefaultPath = '.';
 if fid>0
     try
         DefaultPath = fgetl(fid);
@@ -179,121 +194,38 @@ if fid>0
     catch
     end
 end 
-[FileName,PathName,FilterIndex] = uigetfile(FilterSpec,'Select an EEG file', DefaultPath);
-fid = fopen('.EegWorkflow_DefaultPath.ini','w');
+[FileName, PathName, FilterIndex] = uigetfile(FilterSpec,'Select an EEG file', DefaultPath);
+
+% save the default folder.
+if ~exist(data.INIDIR)
+    mkdir(data.INIDIR);
+end
+fid = fopen(sprintf('%s/.EegWorkflow_DefaultPath.ini', data.INIDIR), 'w');
 if fid>0
-    fprintf(fid,'%s',PathName);
+    fprintf(fid, '%s', PathName);
     fclose(fid);
 end 
 
-%try
+% try block here?
 if isnumeric(FileName) && FileName==0
     AddToListbox(data.listboxStdout, '*** warning *** no file selected');
     hObject.BackgroundColor = savecolour;
 else
-    zz = strsplit(FileName,'.');
-    switch zz{end}
-        case 'cnt'
-            try
-                cLoadANTNeuro = true;
-                data.EEG = pop_loadeep_v4([PathName FileName], 'triggerfile', 'on');
-            catch E
-                if strcmpi(E.message, 'Error getting samples')
-                    cLoadANTNeuro = false;
-                    % try loading Neuroscan
-                    data.EEG = pop_loadcnt([PathName FileName] , 'dataformat', 'auto', 'memmapfile', '');
-                end
-            end
-                
-            % add filename 
-            data.EEG.filename = [PathName FileName];
-
-            if cLoadANTNeuro
-                % some event editing needs to be done for ANT Neuro files
-                
-                % copy to tmp variable and work on that
-                tmp = data.EEG;
-                
-                % insert boundaries and events
-                evtcnt = 0;
-                for ev=1:length(tmp.event)
-                    if tmp.event(ev).latency>1
-                        evtcnt = evtcnt + 1;
-                        if strcmp(tmp.event(ev).type,'__')
-                            typ = 'boundary';
-                        else
-                            typ = strtrim(tmp.event(ev).type);
-                        end
-                        tmp.event(evtcnt).type = typ;
-                        tmp.event(evtcnt).latency = data.EEG.event(ev).latency;
-                        tmp.event(evtcnt).duration = data.EEG.event(ev).duration;
-                    end
-                end
-
-                % check for event length (>10 events), start of first event named 31 (>100 sec), and
-                % existence of a boundary event. If not, search for a "jump" in
-                % activity just before the first event and put in a boundary
-                % event (segment will not work otherwise.)
-                if length(tmp.event)>10 && ~isempty(str2num(tmp.event(1).type)) ...
-                        && tmp.event(1).latency>100*tmp.srate ...
-                        && sum(strcmpi('boundary',{tmp.event.type}))==0
-                    sig = tmp.data(:,(tmp.event(1).latency-tmp.srate*4):tmp.event(1).latency);
-                    z = abs(zscore(mean(abs(diff(sig')')))');
-                    ndx = tmp.event(1).latency-tmp.srate*4 + min(find(z>10)) + 0;
-                    dummy = tmp.event(1);
-                    dummy.type = 'boundary';
-                    dummy.latency = ndx;
-                    dummy.duration = 0;
-                    tmp.event = cat(1,dummy,tmp.event(:));
-                end        
-                data.EEG = tmp;
-                AddToListbox(data.listboxStdout, 'Read ANT CNT file')
-                
-            else
-                AddToListbox(data.listboxStdout, 'Read Neuroscan CNT file')
-            end
-
-        case 'set'
-            data.EEG = pop_loadset([PathName FileName]);
-            data.EEG.filename = [PathName FileName];
-            AddToListbox(data.listboxStdout, 'Read EEGLAB file')
-
-        case 'bdf'
-            if data.checkboxBiosig.Value ~= 0
-                AddToListbox(data.listboxStdout, 'Read BDF file with pop_biosig');
-                data.EEG = pop_biosig([PathName FileName], 'bdfeventmode',1);
-                AddToListbox(data.listboxStdout, ' - data read');
-            else
-                AddToListbox(data.listboxStdout, 'Read BDF file with pop_readbdf');
-                AddToListbox(data.listboxStdout, ' - read file header');
-                tmp = sopen([PathName FileName]);
-                AddToListbox(data.listboxStdout, sprintf(' - %d channels', tmp.NS));
-                data.EEG = pop_readbdf([PathName FileName], [], tmp.NS);
-                AddToListbox(data.listboxStdout, ' - data read');
-            end
-            data.EEG.filename = FileName;
-            AddToListbox(data.listboxStdout, ' - *** NOTE Data are raw. Please rereference in the next steps.');
-            AddToListbox(data.listboxStdout, ' - *** NOTE Renaming EXG* to EXT*.');
-            for ch=1:data.EEG.nbchan
-                if strncmp(data.EEG.chanlocs(ch).labels, "EXG", 3)
-                    data.EEG.chanlocs(ch).labels(3) = "T";
-                end
-            end
-
-        case 'edf'
-            % read header
-            data.EEG = pop_biosig([PathName FileName]);
-            data.EEG.filename = FileName;
-            AddToListbox(data.listboxStdout, 'Read EDF file.');     
-
-        case 'vhdr'
-            % read header
-            data.EEG = pop_loadbv(PathName, FileName, [], []);
-            data.EEG.filename = FileName;
-            AddToListbox(data.listboxStdout, 'Read BrainVision file.');     
+    
+    data.EEG = loadfile(PathName, FileName, data.listboxStdout, data.checkboxBiosig);
+    data.EEG = eeg_checkset(data.EEG);
+    
+    % correct amplitude of Nihon Koden files (EOGH EOGV Fp1 Fp2 F7 F8 had
+    % different gain settings. Heurostic is to divide all channels but
+    % these by two (twice the gain settings). CHECK WITH PSD
+    if data.checkboxCorrectNK.Value
+        AddToListbox(data.listboxStdout, '*** warning *** correcting Nihon Koden files');
+        ndx = FindSetNdx({data.EEG.chanlocs.labels},{'EOGH','EOGV','Fp1','Fp2','F7','F8'});
+        adjust = setdiff(1:data.EEG.nbchan, ndx);
+        data.EEG.data(adjust,:) = data.EEG.data(adjust,:)/2;
     end
     
-    data.EEG = eeg_checkset(data.EEG);
+    % reset the stack for Undo operations
     data.Stack = {};
     data.StackLabel = {};
     %if isfield(data.EEG,'event')
@@ -338,6 +270,116 @@ guidata(hObject,data)
 % end of function ---------------------------------------------------------
 
 
+
+function EEG = loadfile(PathName, FileName, listboxStdout, checkboxBiosig)
+
+if PathName(end)~='/'
+    PathName = [PathName '/'];
+end
+
+zz = strsplit(FileName,'.');
+switch zz{end}
+    case 'cnt'
+        try
+            cLoadANTNeuro = true;
+            EEG = pop_loadeep_v4([PathName FileName], 'triggerfile', 'on');
+        catch E
+            if strcmpi(E.message, 'Error getting samples')
+                cLoadANTNeuro = false;
+                % try loading Neuroscan
+                EEG = pop_loadcnt([PathName FileName] , 'dataformat', 'auto', 'memmapfile', '');
+            end
+        end
+
+        % add filename
+        EEG.filename = [PathName FileName];
+
+        if cLoadANTNeuro
+            % some event editing needs to be done for ANT Neuro files
+
+            % copy to tmp variable and work on that
+            tmp = EEG;
+
+            % insert boundaries and events
+            evtcnt = 0;
+            for ev=1:length(tmp.event)
+                if tmp.event(ev).latency>1
+                    evtcnt = evtcnt + 1;
+                    if strcmp(tmp.event(ev).type,'__')
+                        typ = 'boundary';
+                    else
+                        typ = strtrim(tmp.event(ev).type);
+                    end
+                    tmp.event(evtcnt).type = typ;
+                    tmp.event(evtcnt).latency = EEG.event(ev).latency;
+                    tmp.event(evtcnt).duration = EEG.event(ev).duration;
+                end
+            end
+
+            % check for event length (>10 events), start of first event named 31 (>100 sec), and
+            % existence of a boundary event. If not, search for a "jump" in
+            % activity just before the first event and put in a boundary
+            % event (segment will not work otherwise.)
+            if length(tmp.event)>10 && ~isempty(str2num(tmp.event(1).type)) ...
+                    && tmp.event(1).latency>100*tmp.srate ...
+                    && sum(strcmpi('boundary',{tmp.event.type}))==0
+                sig = tmp.data(:,(tmp.event(1).latency-tmp.srate*4):tmp.event(1).latency);
+                z = abs(zscore(mean(abs(diff(sig')')))');
+                ndx = tmp.event(1).latency-tmp.srate*4 + min(find(z>10)) + 0;
+                dummy = tmp.event(1);
+                dummy.type = 'boundary';
+                dummy.latency = ndx;
+                dummy.duration = 0;
+                tmp.event = cat(1,dummy,tmp.event(:));
+            end        
+            EEG = tmp;
+            AddToListbox(listboxStdout, 'Read ANT CNT file')
+
+        else
+            AddToListbox(listboxStdout, 'Read Neuroscan CNT file')
+        end
+
+    case 'set'
+        EEG = pop_loadset([PathName FileName]);
+        EEG.filename = [PathName FileName];
+        AddToListbox(listboxStdout, 'Read EEGLAB file')
+
+    case 'bdf'
+        if checkboxBiosig.Value ~= 0
+            AddToListbox(listboxStdout, 'Read BDF file with pop_biosig');
+            EEG = pop_biosig([PathName FileName], 'bdfeventmode',1);
+            AddToListbox(listboxStdout, ' - data read');
+        else
+            AddToListbox(listboxStdout, 'Read BDF file with pop_readbdf');
+            AddToListbox(listboxStdout, ' - read file header');
+            tmp = sopen([PathName FileName]);
+            AddToListbox(listboxStdout, sprintf(' - %d channels', tmp.NS));
+            EEG = pop_readbdf([PathName FileName], [], tmp.NS);
+            AddToListbox(listboxStdout, ' - data read');
+        end
+        EEG.filename = FileName;
+        AddToListbox(listboxStdout, ' - *** NOTE Data are raw. Please rereference in the next steps.');
+        AddToListbox(listboxStdout, ' - *** NOTE Renaming EXG* to EXT*.');
+        for ch=1:EEG.nbchan
+            if strncmp(EEG.chanlocs(ch).labels, "EXG", 3)
+                EEG.chanlocs(ch).labels(3) = "T";
+            end
+        end
+
+    case 'edf'
+        % read header
+        EEG = pop_biosig([PathName FileName]);
+        EEG.filename = FileName;
+        AddToListbox(listboxStdout, 'Read EDF file.');     
+
+    case 'vhdr'
+        % read header
+        EEG = pop_loadbv(PathName, FileName, [], []);
+        EEG.filename = FileName;
+        AddToListbox(listboxStdout, 'Read BrainVision file.');     
+end
+
+% end of function ---------------------------------------------------------
 
 
 
@@ -387,6 +429,8 @@ switch data.popupmenuLookupType.Value
             ndx = find(strcmp(labs.Label{ch}, {tmp.chanlocs.labels})); 
             if length(ndx)==1
                 tmp.chanlocs(ndx).labels = labs.ten10{ch};
+            elseif length(ndx)>2
+                pause;
             else
                 AddToListbox(data.listboxStdout, sprintf( '   channel %s not found', labs.Label{ch}));
             end 
@@ -1209,7 +1253,18 @@ data = guidata(hObject);
 % save all the settings
 
 strlist = GetUIControlData(hObject);
-writetable(strlist,sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text')
+
+% Save the data in the INI directry
+if ~exist(data.INIDIR,'dir')
+    mkdir(data.INIDIR)
+end
+writetable(strlist,sprintf('%s/%s.ini', data.INIDIR, get(hObject,'name')), 'delimiter','\t','filetype','text')
+
+% remove the binica files in current directory
+files = dir('binica*'); % Get all matching files
+for f = 1:length(files)
+    delete(fullfile(files(f).folder, files(f).name));
+end
 
 delete(hObject);
 
@@ -1293,51 +1348,54 @@ end
 
 
 
-% --- Executes on button press in pushbuttonICA.
-function pushbuttonICA_Callback(hObject, eventdata, handles)
-% hObject    handle to pushbuttonICA (see GCBO)
+% --- Executes on button press in pushbuttonRemoveNoEEG.
+function pushbuttonRemoveNoEEG_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonRemoveNoEEG (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
 data = guidata(hObject);
-set(hObject, 'BackgroundColor', [.3 .6 .3])
-pause(0.005);
-
-
 
 tmp = data.EEG;
 
-ncomps = data.sliderNComps.Value;
-if ncomps<10
-    ncomps = 10;
-    AddToListbox(data.listboxStdout, 'Too few components selected for ICA. Taking the minimum of 10.')
-end
-if ncomps>tmp.nbchan
-    ncomps=tmp.nbchan;
-    AddToListbox(data.listboxStdout, 'Too many components selected for ICA. Taking the maximum.')
-end
+notEEG = find(cellfun(@isempty, {tmp.chanlocs.X}));
+AddToListbox(data.listboxStdout, sprintf('Removing %d non-EEG channels', length(notEEG)))
+tmp = pop_select(tmp, 'nochannel', notEEG);
 
-try
-    try
-        AddToListbox(data.listboxStdout, 'Running ICA.')
-        tmp = pop_runica(tmp,'icatype','binica','pca',ncomps);
-    catch E
-        AddToListbox(data.listboxStdout, 'Running ICA failed. Reverting to slower version.')
-        tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',ncomps);
-    end
-    data.EEG = tmp;
-    guidata(hObject, data);
-catch E
-    throw(E);
-end
+% tmp = data.EEG;
+% 
+% ncomps = data.sliderNComps.Value;
+% if ncomps<10
+%     ncomps = 10;
+%     AddToListbox(data.listboxStdout, 'Too few components selected for ICA. Taking the minimum of 10.')
+% end
+% if ncomps>tmp.nbchan
+%     ncomps=tmp.nbchan;
+%     AddToListbox(data.listboxStdout, 'Too many components selected for ICA. Taking the maximum.')
+% end
+% 
+% try
+%     try
+%         AddToListbox(data.listboxStdout, 'Running ICA.')
+%         tmp = pop_runica(tmp,'icatype','binica','pca',ncomps);
+%     catch E
+%         AddToListbox(data.listboxStdout, 'Running ICA failed. Reverting to slower version.')
+%         tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',ncomps);
+%     end
+%     data.EEG = tmp;
+%     guidata(hObject, data);
+% catch E
+%     throw(E);
+% end
+% 
+% % push existing data onto stack. Update <data.EEG> to tmp.
 
-% push existing data onto stack. Update <data.EEG> to tmp.
 data.Stack{length(data.Stack)+1} = data.EEG;
-data.StackLabel{length(data.Stack)+1} = 'ICA';
+data.StackLabel{length(data.Stack)+1} = 'Remove non-EEG';
 data.EEG = tmp;
 guidata(hObject, data);
+pause(0.01)
 
-set(hObject, 'BackgroundColor', [.9 .8 .6])
 
 
 
@@ -1385,6 +1443,33 @@ data = guidata(hObject);
 set(hObject, 'BackgroundColor', [.3 .6 .3])
 
 tmp = data.EEG;
+
+ncomps = data.sliderNComps.Value;
+if ncomps<10
+    ncomps = 10;
+    AddToListbox(data.listboxStdout, 'Too few components selected for ICA. Taking the minimum of 10.')
+end
+if ncomps>tmp.nbchan
+    ncomps=tmp.nbchan;
+    AddToListbox(data.listboxStdout, 'Too many components selected for ICA. Taking the maximum.')
+end
+
+try
+    try
+        AddToListbox(data.listboxStdout, 'Running ICA.')
+        tmp = pop_runica(tmp,'icatype','binica','pca',ncomps);
+    catch E
+        AddToListbox(data.listboxStdout, 'Running ICA failed. Reverting to slower version.')
+        tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',ncomps);
+    end
+    data.EEG = tmp;
+    guidata(hObject, data);
+catch E
+    throw(E);
+end
+
+% IC label part
+AddToListbox(data.listboxStdout, 'Performing IC labelling')
 
 tmp = pop_iclabel(tmp, 'default');
 % brainlabel = FindSetNdx(tmp.etc.ic_classification.ICLabel.classes,'Brain');
@@ -1640,20 +1725,19 @@ end
 if isint
     tmp = pop_resample(tmp, fs_new);
 else
+    warning('Resampling by spline interpolation!')
     dummy = pop_resample(tmp, fs_new);
     t_old = (0:tmp.pnts-1)/fs_old;
     t_new = (0:dummy.pnts-1)/fs_new;
 
-    tmp.data = dummy.data;
+    % copy all info to tmp. Overwrite data with spline later.
+    tmp = dummy;
+    
     % Resample using spline interpolation
     for ch=1:tmp.nbchan
         tmp.data(ch,:) = interp1(t_old, data.EEG.data(ch,:), t_new, 'spline');  
     end
     
-    tmp.srate = fs_new;
-    tmp.times = dummy.times;
-    tmp.xmax = dummy.xmax;
-    tmp.pnts = dummy.pnts;
 end
 
 data.Stack{length(data.Stack)+1} = data.EEG;
@@ -1881,6 +1965,9 @@ try
         case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
         case 4, tmp = eeg_REST_reref(tmp);
         case 5, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
+        case 6  % special case for a special dataset, first avg then A1A2
+            tmp = pop_reref(tmp, []);
+            tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
     end
 catch
     AddToListbox(data.listboxStdout, sprintf('WARNING! Need to run ICA first'));
@@ -2058,6 +2145,7 @@ AddToListbox(data.listboxStdout, 'Clean data usig clean_rawdata');
 
 tmp = pop_clean_rawdata(data.EEG, ...
     'FlatlineCriterion','on','LineNoiseCriterion','off','Highpass','off',...
+    'BurstCriterionRefTolerances', [-Inf 3.0], ...
     'ChannelCriterion', data.sliderChannelMinR.Value, ...
     'BurstCriterion',data.sliderBurstCriterion.Value,...
     'WindowCriterion', 0.25 ,... % default value
@@ -2072,7 +2160,7 @@ data.EEG = tmp;
 guidata(hObject, data);
 
 set(hObject,'backgroundcolor',[.9 .8 .6])
-set(data.pushbuttonICA, 'backgroundcolor', [.6 1 .6]);
+set(data.pushbuttonICLabel, 'backgroundcolor', [.6 1 .6]);
 pause(0.005);
 
 
@@ -2090,7 +2178,9 @@ AddToListbox(data.listboxStdout, 'Clean data of muscle actvit using AAR in 40s w
 tmp = data.EEG;
 ws = data.sliderAARWinSec.Value;
 ss = data.sliderAARShift.Value;
-tmp = pop_autobssemg(tmp, ws, ss, 'bsscca', {'eigratio', [1000000]}, 'emg_psd', {'ratio', [10],'fs', [256],'femg', [15],'estimator',spectrum.welch,'range', [0  34]});
+tmp = pop_autobssemg(tmp, ws, ss, 'bsscca', {'eigratio', [1000000]}, ...
+    'emg_psd', {'ratio', [10],'fs', [256],'femg', [15],...
+    'estimator', spectrum.welch, 'range', [0  34]});
 
 % push existing data onto stack. Update <data.EEG> to tmp.
 data.Stack{length(data.Stack)+1} = data.EEG;
@@ -2563,7 +2653,7 @@ function checkboxTaskNoTask_Callback(hObject, eventdata, handles)
 % Hint: get(hObject,'Value') returns toggle state of checkboxTaskNoTask
 
 data = guidata(hObject);
-tmp = ifthen(get(hObject,"Value")>0, 'Remove task', 'Remove no-task');
+tmp = ifthen(get(hObject,"Value")>0, 'Rm task', 'Rm no-task');
 data.pushbuttonRemoveResting.String = tmp;
 
 
@@ -2703,6 +2793,26 @@ if tmp1.nbchan==tmp2.nbchan && tmp1.pnts==tmp2.pnts
         'events',tmp2.event, 'data2', tmp1.data);
 else
     AddToListbox(data.listboxStdout, '*** Warning *** data and comparison data are incompatible to plot together');
+    
+    % try to match the data on channels
+    u = union({tmp2.chanlocs.labels}, {tmp1.chanlocs.labels});
+    tmp1 = pop_select(tmp1, 'channel', u);
+    tmp2 = pop_select(tmp2, 'channel', u);
+    % match sampling rate
+    if tmp1.srate~=tmp2.srate
+        newrate = min(tmp1.srate, tmp2.srate);
+        tmp1 = pop_resample(tmp1,newrate);
+        tmp2 = pop_resample(tmp2,newrate);
+    end
+    % match time
+    if tmp1.pnts ~- tmp2.pnts
+        newpnts = min(tmp1.pnts, tmp2.pnts);
+        tmp1 = pop_select(tmp1, 'point', [1 newpnts]);
+        tmp2 = pop_select(tmp2, 'point', [1 newpnts]);
+    end
+    eegplot(tmp2.data,'srate',tmp2.srate,'eloc_file',tmp2.chanlocs,'spacing',50,...
+    'limits',[tmp2.xmin tmp2.xmax],'winlength',12,'position',screensize,...
+    'events',tmp2.event, 'data2', tmp1.data);
 end
 
 guidata(hObject,data);
@@ -2794,8 +2904,82 @@ function pbBatch_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-h = figRunbatch(hObject);
+h = figRunBatchModal(gcf);
 uiwait(h);
+
+data = guidata(hObject);
+if isfield(data,'batchfilenames') &&  ~isempty(data.batchfilenames)
+    % loop thourgh files and apply the checked functions
+    for f=1:length(data.batchfilenames)
+        fn = sprintf('%s/%s', data.batchpathname, data.batchfilenames{f});
+        
+        EEG = loadfile(data.batchpathname, data.batchfilenames{f}, data.listboxStdout, data.checkboxBiosig);
+        data.EEG = EEG;
+        guidata(hObject, data);
+        pause(0.01); % allows the upload
+        
+        for cb=data.batchchecked
+            % run this checkbox
+            switch cb
+                case 1
+                    pushbuttonFlatline_Callback(data.pushbuttonFlatline, [], []);
+                    data = guidata(hObject);
+                case 2
+                    pushbuttonExcessive_Callback(data.pushbuttonExcessive, [], []);
+                    data = guidata(hObject);
+                case 3
+                    pushbuttonChanlocs_Callback(data.pushbuttonChanlocs, [], []);
+                    data = guidata(hObject);
+                case 4
+                    pushbuttonResample_Callback(data.pushbuttonResample, [], []);
+                    data = guidata(hObject);
+                case 5
+                    pushbuttonReref_Callback(data.pushbuttonReref, [], []);
+                    data = guidata(hObject);
+                case 6
+                    pushbuttonFilter_Callback(data.pushbuttonFilter, [], []);
+                    data = guidata(hObject);
+                    
+                case 7
+                    pushbuttonInitialICA_Callback(data.pushbuttonInitialICA, [], []);
+                    data = guidata(hObject);
+                case 8
+                    pushbuttonAltInitialEOG_Callback(data.pushbuttonAltInitialEOG, [], []);
+                    data = guidata(hObject);
+                case 9
+                    pushbuttonAARWinSec_Callback(data.pushbuttonAARWinSec, [], []);
+                    data = guidata(hObject);
+                case 10
+                    pushbuttonAltAAR_Callback(data.pushbuttonAltAAR, [], []);
+                    data = guidata(hObject);
+
+                case 11
+                    pushbuttonRemoveNoEEG_Callback(data.pushbuttonRemoveNoEEG, [], []);
+                    data = guidata(hObject);
+                case 12
+                    pushbuttonFlatPeriod_Callback(data.pushbuttonFlatPeriod, [], []);
+                    data = guidata(hObject);
+                case 13
+                    pushbuttonClean_Callback(data.pushbuttonClean, [], []);
+                    data = guidata(hObject);
+                case 14
+                    pushbuttonICLabel_Callback(data.pushbuttonICLabel, [], []);
+                    data = guidata(hObject);
+            end
+        end
+        
+        % clear the stack
+        data.Stack = {};
+        data.StackLabel = {};
+        guidata(hObject, data);
+        
+        % save the file with prefix batch
+        pop_saveset(data.EEG, 'filename', sprintf('BatchCln_%s', data.batchfilenames{f}), ...
+                              'filepath', data.batchpathname, ...
+                              'savemode', 'onefile')
+        
+    end
+end
 
 
 % --- Executes on button press in pushbuttonImputeAll.
@@ -3022,8 +3206,10 @@ function checkbox_callback(hObject, ax, fs, P, chanlocs, fontsize)
         % repair: convert cell array of double to double with missings
         for lab=1:length(numlabels)
             if ismember(numlabels{lab}, tab.Properties.VariableNames)
-                values = cellfun(@(x)ifthen(isempty(x), nan, double(x)), tab.(numlabels{lab}));
-                tab.(lab) = values;
+                if iscell(tab.(numlabels{lab}))
+                    values = cellfun(@(x)ifthen(isempty(x), nan, double(x)), tab.(numlabels{lab}));
+                    tab.(lab) = values;
+                end
             end
         end
         
@@ -3099,3 +3285,201 @@ topoplot(exp, tmp.chanlocs, 'maplimits', [.5 .8]);
 colorbar;
 
 guidata(hObject, data);
+
+
+% --- Executes on button press in pushbuttonFlatPeriod.
+function pushbuttonFlatPeriod_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonFlatPeriod (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+AddToListbox(data.listboxStdout, 'Removing flatline periods based on Std and some heuristics.')
+AddToListbox(data.listboxStdout, '* WARNING remove bad / non-eeg channels first.')
+AddToListbox(data.listboxStdout, '- NOTE *eog* channels will be ignored.')
+AddToListbox(data.listboxStdout, '- NOTE channels with no location info will be ignored')
+
+tmp = data.EEG;
+
+EOG = FindSetNdx({tmp.chanlocs.labels},'*eog*','match','pattern');
+EEG = find(~cellfun(@isempty, {tmp.chanlocs.X}));
+EEG = setdiff(EEG,EOG);
+
+% get power spectra in chuncks of 200ms so as to get 5, 10, 15 ... Hz power
+% in many epochs each of 200 ms. 
+[~,fs, allP] = pfft(tmp.data(EEG,:)', tmp.srate, ones(1,tmp.srate/5), 0);
+zz = log(squeeze(mean(allP(fs>8&fs<=20, :, :)))'); % log is to normalize
+H = nan(size(zz));
+H(:) = zz(:)<-3.5;
+
+
+% len=10; 
+% delta = nan(tmp.nbchan, tmp.pnts-len+1);
+% for s=1:tmp.pnts-len+1
+%     delta(:,s) = std(detrend(tmp.data(:,s:s+len-1)')); 
+% end
+% 
+% mask = ((sum(delta<median(delta(:))/10))>tmp.nbchan/3);
+% mask2=mask; 
+% for s=1:length(mask)
+%     if mask(s)
+%         mask2(s-round(tmp.srate*.5):(s+len+4))=true; 
+%     end
+% end
+% 
+% row=0; 
+% times=[];
+% state=0; 
+% for s=1:s(mask2) 
+%     if mask2(s) && state==0
+%         state=1; 
+%         row=row+1; 
+%         times(row,1)=s; 
+%     elseif ~mask2(s) && state==1
+%         state=0; 
+%         times(row,2)=s-1; 
+%     end
+% end
+
+row=0; 
+times=[];
+state=0; 
+for s=1:size(H,1) 
+    if any(H(s,:)) && state==0
+        state = 1; 
+        row = row+1; 
+        times(row,1) = (s-1)*.2 - .2; % fixed! .2 depends on pfft call! 
+    elseif ~any(H(s,:)) && state==1
+        state = 0; 
+        times(row,2) = (s-1)*.2 + .2; 
+    end
+end
+if state==1 && times(row,2) == 0
+    times(row,2) = tmp.xmax;
+end
+
+% merge lines if period inbetween to-be-removed chunks <1s
+for row=1:size(times,1)-1
+    if times(row+1,1)<=times(row,2)+1
+        times(row+1,1) = times(row+1,1)-1;
+    end
+end
+        
+
+% output result and apply
+AddToListbox(data.listboxStdout, sprintf('- Removing %d periods', size(times,1)))
+tmp = pop_select(tmp, 'notime', times);
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Clear flatline periods';
+data.EEG = tmp;
+
+guidata(hObject, data)
+
+
+% --- Executes on button press in pushbuttonAltAAR.
+function pushbuttonAltAAR_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonAltAAR (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+set(hObject,'backgroundcolor',[.3 .6 .3])
+pause(0.005);
+
+tmp = data.EEG;
+[~,~,~,~,~,int_data] = InterpolationCleaning(tmp);
+
+len = tmp.srate*5;
+startpnts = 1:len:(tmp.pnts-len+1);
+Forig = nan(len,tmp.nbchan,length(startpnts));
+Fint  = Forig;
+Fnew  = Forig;
+fft_fs = linspace(0,tmp.srate,len);
+fft_fs = fft_fs(1:end-1);
+    
+Porig = nan(tmp.srate/2+1,tmp.nbchan,length(startpnts));
+Pint  = Porig;
+cnt = 0;
+for start=startpnts
+    cnt=cnt+1;
+    Forig(:,:,cnt) = fft(tmp.data(:, start:start+len-1)');
+    Fint(:,:,cnt)  = fft(int_data(:, start:start+len-1)');
+    [Porig(:,:,cnt), ~] = pfft(tmp.data(:, start:start+len-1)', tmp.srate, ones(1,tmp.srate), 0);
+    [Pint(:,:,cnt), fs] = pfft(int_data(:, start:start+len-1)', tmp.srate, ones(1,tmp.srate), 0);
+    
+    % determine upward slope for original signal in high freq region. NOTE
+    % negative tstat means more power in uncleaned data.
+    ndx = fs>13&fs<35;
+    [~,~,~,reg] = ttest(db(Pint(ndx,:,1)),db(Porig(ndx,:,1)));
+    select = reg.tstat < -data.sliderTstat.Value;
+    
+    % assume all data is good. data_new is ordered in rows!
+    data_new(:,:,cnt) = tmp.data(:, start:start+len-1);
+    
+    Fnew(:,:,cnt) = Forig(:,:,cnt);
+    if sum(select)
+        % create a linspace from 0 to one from 13 to 35 hertz FOR FFT.
+        weight = zeros(1, len);
+        weight(fft_fs>=35) = 1;
+        weight(fft_fs>=13 & fft_fs<=35) = linspace(0,1,sum(fft_fs>=13 & fft_fs<=35));
+        % duplicate around center
+        weight = [weight(1:end/2) 1 weight(end/2:-1:2)];
+
+        Fnew(:,select,cnt) = Forig(:,select,cnt) .* repmat((1-weight)',1, sum(select)) + Fint(:,select,cnt) .* repmat(weight', 1, sum(select));
+        data_new(select,:,cnt) = ifft(Fnew(:,select,cnt))';
+    end
+end
+
+tmp.data = data_new(:,:);
+tmp.pnts = size(tmp.data,2);
+tmp.xmax = (tmp.pnts-1)/tmp.srate;
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Alternate EMG cleaning';
+data.EEG = tmp;
+
+set(hObject,'backgroundcolor',[.9 .8 .6])
+
+guidata(hObject, data)
+
+
+% --- Executes on slider movement.
+function sliderTstat_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderTstat (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+
+data = guidata(hObject);
+
+data.textTstat.String = sprintf('%.1f', get(hObject,'Value'));
+
+
+
+
+% --- Executes during object creation, after setting all properties.
+function sliderTstat_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderTstat (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+
+
+% --- Executes on button press in checkboxCorrectNK.
+function checkboxCorrectNK_Callback(hObject, eventdata, handles)
+% hObject    handle to checkboxCorrectNK (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkboxCorrectNK
