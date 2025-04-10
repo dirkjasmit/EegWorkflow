@@ -1965,9 +1965,14 @@ try
         case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
         case 4, tmp = eeg_REST_reref(tmp);
         case 5, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
+            
         case 6  % special case for a special dataset, first avg then A1A2
             tmp = pop_reref(tmp, []);
             tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
+            
+        case 7  % special case for BECAUSE dataset: EXT5/6 are A1/A2
+            tmp = pop_reref(tmp, {'EXT5','EXT6'});
+            
     end
 catch
     AddToListbox(data.listboxStdout, sprintf('WARNING! Need to run ICA first'));
