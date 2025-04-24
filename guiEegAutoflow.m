@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 21-Mar-2025 10:31:02
+% Last Modified by GUIDE v2.5 23-Apr-2025 21:13:56
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -101,8 +101,11 @@ end
 
 % read the defualt values
 try
-    strlist = readtable(sprintf('%s/%s.ini', data.INIDIR, get(hObject,'name')), ...
-        'delimiter','\t', 'filetype','text');
+    FN = sprintf('%s/%s.ini', data.INIDIR, get(hObject,'name'));
+    opts = detectImportOptions(FN, 'TextType', 'string', 'filetype', 'text');
+    opts.DataLines = [2 Inf];
+    opts.VariableTypes(:) = {'string'};  % Force all columns to string
+    strlist = readtable(FN, opts);
     SetUIControlData(hObject, strlist);
 catch E
     warning('Initialization file not found. Will be created on close.')
@@ -261,6 +264,7 @@ else
     data.pushbuttonClean.BackgroundColor = [1 .6 .6];
     data.pushbuttonICA.BackgroundColor = [1 .6 .6];
     data.pushbuttonICLabel.BackgroundColor = [1 .6 .6];
+    data.pushbuttonAARWinSec.BackgroundColor = [1 .6 .6];
     hObject.BackgroundColor = [1 .6 .6];
 
 end
@@ -1325,7 +1329,7 @@ for c=1:length(ch)
                     if isnumeric(strlist.val)
                         set(ch(c),'value', strlist.val(ndx));
                     else
-                        set(ch(c),'value', double(strlist.val{ndx}));
+                        set(ch(c),'value', str2num(strlist.val{ndx}));
                     end
                 end
                 pause(0.005);
@@ -1336,7 +1340,7 @@ for c=1:length(ch)
                     if isnumeric(strlist.val)
                         set(ch(c),'value', strlist.val(ndx));
                     else
-                        set(ch(c),'value', double(strlist.val{ndx}));
+                        set(ch(c),'value', str2num(strlist.val{ndx}));
                     end
                 end
                 ch(c).Callback(ch(c),[])
@@ -1686,7 +1690,7 @@ data = guidata(hObject);
 tmp = data.EEG;
 
 % open modal dialog and wait
-h = figSaveModal(tmp, tmp.filename, data.fontsize);
+h = figSaveModal(tmp, tmp.filename, data.fontsize, data.INIDIR);
 uiwait(h);
 
 
@@ -1958,32 +1962,39 @@ end
     
 AddToListbox(data.listboxStdout, sprintf('Rereferencing data (%s)',data.popupmenuReref.String{data.popupmenuReref.Value}));
 
-try
-    switch data.popupmenuReref.Value
-        case 1, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),'CPZ')));
-        case 2, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'M1','M2'})));
-        case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
-        case 4, tmp = eeg_REST_reref(tmp);
-        case 5, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
-            
-        case 6  % special case for a special dataset, first avg then A1A2
-            tmp = pop_reref(tmp, []);
-            tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
-            
-        case 7  % special case for BECAUSE dataset: EXT5/6 are A1/A2
-            tmp = pop_reref(tmp, {'EXT5','EXT6'});
-            
-    end
-catch
-    AddToListbox(data.listboxStdout, sprintf('WARNING! Need to run ICA first'));
-    tmp = pop_runica(tmp,'icatype','binica','pca',16);
-    switch data.popupmenuReref.Value
-        case 1, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),'CPZ')));
-        case 2, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'M1','M2'})));
-        case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
-        case 4, error('not yet finsihed')
-        case 5, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
-    end
+switch data.popupmenuReref.Value
+    case 1, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),'CPZ')));
+    case 2, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'M1','M2'})));
+    case 3, tmp = pop_reref(tmp, [], 'exclude', find(ismember(upper({tmp.chanlocs.labels}),{'HEOG','VEOG'})));
+    case 4, tmp = eeg_REST_reref(tmp);
+    case 5, tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
+        
+    case 6  % special case for a special dataset, first avg then A1A2
+        tmp = pop_reref(tmp, []);
+        tmp = pop_reref(tmp, find(ismember(upper({tmp.chanlocs.labels}),{'A1','A2'})));
+        
+    case 7  % special case for BECAUSE dataset: EXT5/6 are A1/A2
+        tmp = pop_reref(tmp, {'EXT5','EXT6'});
+    case 8
+        trodes = {};
+        for ch=1:tmp.nbchan
+            if ~isempty(tmp.chanlocs(ch).X)
+                trodes = cat(1, trodes, {tmp.chanlocs(ch).labels});
+            end
+        end
+        if length(trodes)<tmp.nbchan
+            warning('DOWNSIZING DATA. Only channels with  location info can be used for CSD')
+            tmp = pop_select(tmp,'channel',trodes);
+        end
+        %% Get Montage for use with CSD Toolbox
+        Montage_64 = ExtractMontage('/Users/dirksmit/MATLAB/CSDtoolbox/resource/10-5-System_Mastoids_EGI129.csd',trodes);
+        [G,H] = GetGH(Montage_64);
+        [s1,s2,s3] = size(tmp.data);
+        tmp.data = CSD(tmp.data(:,:),G,H);
+        if s3>1
+            tmp.data = reshape(tmp.data, [s1,s2,s3]);
+        end
+        
 end
 
 % push existing data onto stack. Update <data.EEG> to tmp.
@@ -2039,7 +2050,9 @@ pause(0.005);
 AddToListbox(data.listboxStdout, 'Running intial ICA of 16 PCs');
 
 tmp = data.EEG;
-tmp.data = detrend(tmp.data','constant')';
+if (tmp.trials==1)
+    tmp.data = detrend(tmp.data','constant')';
+end
 try
     tmp = pop_runica(tmp,'icatype','binica','pca',16);
 catch E
@@ -2063,7 +2076,7 @@ if sum(icdeselect)>0
     fprintf(' - Remove %d eye ICs\n',sum(icdeselect));
     % use the source subtraction method to remove ICs, NOT the pop_select
     % method that reduces the dimensionality of the data.
-    tmp.data = tmp.data - tmp.icawinv(:,icdeselect)*tmp.icaact(icdeselect,:);
+    tmp.data(:,:) = tmp.data(:,:) - tmp.icawinv(:,icdeselect)*tmp.icaact(icdeselect,:);
 end
 
 % push existing data onto stack. Update <data.EEG> to tmp.
@@ -2630,6 +2643,9 @@ AddToListbox(data.listboxStdout, sprintf('- removing %f.1 seconds of data', sum(
 % get points to remove, ndx1 the strat point, ndx2 the end points
 ndx1 = find(diff(mask)<0);
 ndx2 = find(diff(mask)>0)-1;
+if ndx1(1)>ndx2(1)
+    ndx1 = [1 ndx1];
+end
 if length(ndx1)>length(ndx2)
     ndx2=[ndx2 tmp.pnts];
 end
@@ -2970,6 +2986,9 @@ if isfield(data,'batchfilenames') &&  ~isempty(data.batchfilenames)
                 case 14
                     pushbuttonICLabel_Callback(data.pushbuttonICLabel, [], []);
                     data = guidata(hObject);
+                case 15
+                    pushbuttonMaskEvt_Callback(data.pushbuttonICLabel, [], []);
+                    data = guidata(hObject);
             end
         end
         
@@ -3031,9 +3050,9 @@ data.EEG = tmp;
 guidata(hObject, data);
 
 
-% --- Executes on button press in pbMaskEvt.
-function pbMaskEvt_Callback(hObject, eventdata, handles)
-% hObject    handle to pbMaskEvt (see GCBO)
+% --- Executes on button press in pushbuttonMaskEvt.
+function pushbuttonMaskEvt_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonMaskEvt (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
@@ -3043,18 +3062,31 @@ AddToListbox(data.listboxStdout, '- masking all events types to 0-255 (numeric o
 
 % as always, work on tmp in stead of data.EEG
 tmp = data.EEG;
+keep = true(1,length(tmp.event));
 for e=1:length(tmp.event)
     ev = tmp.event(e).type;
     evclass = class(ev);
     if isnumeric(ev)
         if ev==round(ev)
-            ev = bitand(ev, 255);
+            val = bitand(ev, 255);
+            if val
+                ev = val;
+            else
+                keep(e) = false;
+            end
         end
     elseif ~isnan(str2double(ev))
-        ev = num2str(bitand(str2double(ev), 255));
+        val = bitand(str2double(ev), 255);
+        if val
+            ev = num2str(bitand(str2double(ev), 255));
+        else
+            keep(e) = false;
+        end
     end
     tmp.event(e).type = ev;
 end
+
+tmp.event = tmp.event(keep);
 
 
 % push existing data onto stack. Update <data.EEG> to tmp.

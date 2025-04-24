@@ -22,7 +22,7 @@ function varargout = figSaveModal(varargin)
 
 % Edit the above text to modify the response to help figSaveModal
 
-% Last Modified by GUIDE v2.5 17-Oct-2024 15:42:33
+% Last Modified by GUIDE v2.5 24-Apr-2025 13:59:18
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -64,14 +64,25 @@ guidata(hObject, handles);
 if length(varargin)<1
     error('Must pass an EEG struct to be saved.')
 end
-if length(varargin)>3
+if length(varargin)>4
     error('Too many parameters passed')
 end
 
+% get data object and start filling
+data = guidata(hObject);
 
-% set the values of the uicontrols
+data.INIDIR = varargin{4};
+if data.INIDIR(1)=='~'
+    data.INIDIR = sprintf("%s%s", getenv('HOME'), data.INIDIR(2:end)); 
+end
+
+% set the values of the uicontrols, including the save path
 try
-    strlist = readtable(sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text');
+    FN = sprintf('%s/%s.ini', data.INIDIR, get(hObject,'name'));
+    opts = detectImportOptions(FN, 'TextType', 'string', 'filetype', 'text');
+    opts.DataLines = [2 Inf];
+    opts.VariableTypes(:) = {'string'};  % Force all columns to string
+    strlist = readtable(FN, opts);
     SetUIControlData(hObject, strlist);
 catch
     warning('Initialization file not found. Will be created on close.')
@@ -99,13 +110,11 @@ end
 % get the object data (object is the modal figure). Save the passed
 % parameters (EEG struct and filename). Overrides the saved uitcontrol data
 % for some uicontrols
-data = guidata(hObject);
 data.EEG = varargin{1};
-if length(varargin)>1
-    data.Filename = varargin{2};
-    [a,b,c]=fileparts(varargin{2});
-    data.textFilenameIn.String = [b c];
-end
+
+data.Filename = varargin{2};
+[a,b,c]=fileparts(varargin{2});
+data.textFilenameIn.String = [b c];
 
 
 % get file string up to first _ or . or space and use that as prospective
@@ -118,7 +127,10 @@ catch
     data.editSubject.String = '';    
 end
 
+% store the data
 guidata(hObject, data);
+
+% update edit box
 editSubject_Callback(hObject,eventdata,guidata(hObject));
 
 
@@ -150,7 +162,7 @@ for c=1:length(ch)
                     if isnumeric(strlist.val)
                         set(ch(c),'value', strlist.val(ndx));
                     else
-                        set(ch(c),'value', double(strlist.val{ndx}));
+                        set(ch(c),'value', str2num(strlist.val{ndx}));
                     end
                 end
                 pause(0.005);
@@ -161,7 +173,7 @@ for c=1:length(ch)
                     if isnumeric(strlist.val)
                         set(ch(c),'value', strlist.val(ndx));
                     else
-                        set(ch(c),'value', double(strlist.val{ndx}));
+                        set(ch(c),'value', str2num(strlist.val{ndx}));
                     end
                 end
                 ch(c).Callback(ch(c),[])
@@ -315,6 +327,8 @@ function popupmenuProject_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+% projectstrings.ini file should be stored next to the EegAutoFlow figures.
 T = readtable('projectStrings.ini', "FileType", 'text', "delimiter", "\t");
 set(hObject, 'String', T.ProjectName);
 
@@ -353,11 +367,11 @@ function pushbuttonSave_Callback(hObject, eventdata, handles)
 
 data = guidata(hObject);
 
-if isempty(data.editSubject.String) || data.popupmenuProject.Value==1 ||  isempty(data.popupmenuProject.String)
+if isempty(data.editSubject.String)  ||  isempty(data.popupmenuProject.String)
     error('Subject and Project cannot be empty!')
 end
 
-pop_saveset(data.EEG,'filename',data.FN,'savemode','onefile');
+pop_saveset(data.EEG, 'filename',data.FN, 'filepath',data.editPath.String, 'savemode','onefile');
 close(gcf);
 
 
@@ -494,10 +508,13 @@ function figure1_CloseRequestFcn(hObject, eventdata, handles)
 
 % Hint: delete(hObject) closes the figure
 
+data = guidata(hObject);
+
 try
     strlist = GetUIControlData(hObject);
-    writetable(strlist,sprintf('%s.ini',get(hObject,'name')),'delimiter','\t','filetype','text')
-catch
+    writetable(strlist, sprintf('%s/%s.ini', data.INIDIR, get(hObject,'name')), 'delimiter','\t', 'filetype','text')
+catch E
+    warning('An error occured on closing');
 end
 
 delete(hObject);
@@ -519,7 +536,10 @@ for c=1:length(ch)
         switch get(ch(c),'Style')
             case 'edit'
                 tmp1 = sprintf('%s',get(ch(c),'tag'));
-                tmp2 = sprintf('%s',get(ch(c),'string'));
+                tmp2 = get(ch(c),'string');
+                if iscell(tmp2)
+                    tmp2 = tmp2{1};
+                end
             case {'checkbox','slider','popupmenu'}
                 tmp1 = sprintf('%s',get(ch(c),'tag'));
                 tmp2 = sprintf('%.4f',get(ch(c),'value'));
@@ -561,3 +581,60 @@ function popupmenuPrefix_CreateFcn(hObject, eventdata, handles)
 if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
     set(hObject,'BackgroundColor','white');
 end
+
+
+
+function editPath_Callback(hObject, eventdata, handles)
+% hObject    handle to editPath (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of editPath as text
+%        str2double(get(hObject,'String')) returns contents of editPath as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function editPath_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to editPath (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on button press in pushbuttonPath.
+function pushbuttonPath_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonPath (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+
+data = guidata(hObject);
+
+origPath = data.editPath.String;
+if iscell(origPath)
+    origPath = origPath{1};
+end
+
+try
+    if exist(origPath)==7
+        % fall thru
+    elseif exist(origPath) == 2
+        % file, strip path from it
+        origPath = fileparts(origPath);
+    end
+catch
+    origPath = '';
+end
+
+str = uigetdir(origPath);
+
+if ~isempty(str)
+    data.editPath.String = str;
+end
+
+guidata(hObject, data);
