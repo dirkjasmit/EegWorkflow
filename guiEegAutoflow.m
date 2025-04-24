@@ -2618,15 +2618,29 @@ function pushbuttonRemoveResting_Callback(hObject, eventdata, handles)
 
 data = guidata(hObject);
 
-AddToListbox(data.listboxStdout, 'Looking for periods with events.');
 
 % as always, work on tmp in stead of data.EEG
+dims = [1 35];  % Textbox dimensions
+definput = {'2.0', '2.0'};  % Default values
+answer = inputdlg({'Keep data before event (s)', 'Keep data after event (s)'}, ...
+    'input lower and upper bound for PSD', dims, definput);
+% Convert the cell array to numbers
+if ~isempty(answer) % Check if user didn't cancel
+    lo = round(str2double(answer{1}));
+    hi = round(str2double(answer{2}));
+else
+    AddToListbox(data.listboxStdout, 'User cancelled');
+    return
+end
+cWithin = 2.0; %
+AddToListbox(data.listboxStdout, sprintf('Looking for periods with events (+ %.f and - %.f s)', hi, lo));
+
 tmp = data.EEG;
 mask = false(1,tmp.pnts);
 for e=1:length(tmp.event)
     if (~strcmpi(tmp.event(e).type, "boundary"))
-        start = floor(tmp.event(e).latency-tmp.srate*2);
-        stop  = ceil(tmp.event(e).latency+tmp.srate*2);
+        start = floor(tmp.event(e).latency-tmp.srate*lo);
+        stop  = ceil(tmp.event(e).latency+tmp.srate*hi);
         start = ifthen(start<1, 1, start);
         stop  = ifthen(stop<1, 1, stop);
         mask(start:stop) = true;
