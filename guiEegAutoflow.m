@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 23-Apr-2025 21:13:56
+% Last Modified by GUIDE v2.5 25-Apr-2025 11:11:02
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -3534,3 +3534,38 @@ function checkboxCorrectNK_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 % Hint: get(hObject,'Value') returns toggle state of checkboxCorrectNK
+
+
+% --- Executes on button press in pushbuttonReview.
+function pushbuttonReview_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonReview (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+if ~isfield(data,'EEG') || isempty(data.EEG.data)
+    msgbox('No data available');
+    data.pbView.BackgroundColor = [1 .6 .6];
+    return
+end
+
+setappdata(0, 'myGuiObj', hObject);
+
+pop_eegplot(data.EEG, 1, 1, 0, [], 'title', 'Scroll EEG', ...
+    'command', 'h=getappdata(0, ''myGuiObj''); TMPREJ, data=guidata(h); disp(data.EEG), data.EEG = eeg_eegrej(data.EEG, TMPREJ); guidata(h, data);');
+
+
+% --- Executes on button press in pushbuttonMemoryBack.
+function pushbuttonMemoryBack_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonMemoryBack (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+global GlobEEG
+
+data.EEG = GlobEEG;
+
+guidata(hObject, data);
