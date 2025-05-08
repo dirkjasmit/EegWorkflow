@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 25-Apr-2025 11:11:02
+% Last Modified by GUIDE v2.5 07-May-2025 15:52:40
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -218,14 +218,14 @@ else
     data.EEG = loadfile(PathName, FileName, data.listboxStdout, data.checkboxBiosig);
     data.EEG = eeg_checkset(data.EEG);
     
-    % correct amplitude of Nihon Koden files (EOGH EOGV Fp1 Fp2 F7 F8 had
-    % different gain settings. Heurostic is to divide all channels but
-    % these by two (twice the gain settings). CHECK WITH PSD
+    % correct amplitude of Nihon Koden files (EOGH EOGV Fp1 Fp2 , possibly F7 F8 had
+    % different gain settings. Heuristic is to divide all channels but
+    % these by two (half the gain settings). CHECK WITH PSD
     if data.checkboxCorrectNK.Value
         AddToListbox(data.listboxStdout, '*** warning *** correcting Nihon Koden files');
-        ndx = FindSetNdx({data.EEG.chanlocs.labels},{'EOGH','EOGV','Fp1','Fp2','F7','F8'});
-        adjust = setdiff(1:data.EEG.nbchan, ndx);
-        data.EEG.data(adjust,:) = data.EEG.data(adjust,:)/2;
+        adjust = FindSetNdx({data.EEG.chanlocs.labels},{'EOGH','EOGV','Fp1','Fp2','F7','F8'});
+        % adjust = setdiff(1:data.EEG.nbchan, adjust);
+        data.EEG.data(adjust,:) = data.EEG.data(adjust,:)*2;
     end
     
     % reset the stack for Undo operations
@@ -268,6 +268,12 @@ else
     hObject.BackgroundColor = [1 .6 .6];
 
 end
+
+% start a meta-data table line. Fill it as struct, then use struct2table to
+% create the table. Every call (every buttonpresss will fill a struct
+% field.
+data.tabLine = struct();
+data.tabLine.starttime = size(data.EEG.data(:,:),2) / data.EEG.srate;
 
 guidata(hObject,data)
 
@@ -1304,7 +1310,8 @@ end
 
 strlist = struct2table(strlist);
 
-% 
+
+% SETUICONTROLDATA fills the data with the values in strlist ------------
 function SetUIControlData(hObject, strlist)
 
 ch = get(hObject,'ch');
@@ -1365,6 +1372,10 @@ tmp = data.EEG;
 notEEG = find(cellfun(@isempty, {tmp.chanlocs.X}));
 AddToListbox(data.listboxStdout, sprintf('Removing %d non-EEG channels', length(notEEG)))
 tmp = pop_select(tmp, 'nochannel', notEEG);
+if data.popupmenuReref.Value && strcmpi(data.popupmenuReref.String{data.popupmenuReref.Value}, 'Average')
+    AddToListbox(data.listboxStdout, sprintf('- redo avg reference'))
+    tmp = pop_reref(tmp, []);
+end
 
 % tmp = data.EEG;
 % 
@@ -1491,7 +1502,12 @@ fprintf('Removing components: ')
 fprintf(' %d',find(icdeselect))
 fprintf('\n')
 if sum(icdeselect)>0
-    tmp = pop_subcomp(tmp, find(icdeselect), false, 0);
+    % use subtraction method for each component (repmat not required this
+    % way!
+    for comp=find(icdeselect)'
+        tmp.data(:,:) = tmp.data(:,:) - tmp.icaact(comp,:);
+    end
+    data.tabLine.iclabelDeselect = sum(icdeselect);
 end
 
 % push existing data onto stack. Update <data.EEG> to tmp.
@@ -1836,14 +1852,17 @@ tmp = data.EEG;
 crit = data.sliderFlatlineSD.Value;
 AddToListbox(data.listboxStdout, sprintf('Removing channels with <%.1f stdev.', crit));
 
+
 % get very low StdDev for channels
 SD = std(data.EEG.data(:,:)');
 ndx = find(SD < crit);
 if ~isempty(ndx)
     AddToListbox(data.listboxStdout, sprintf('- Removing %d channels ', length(ndx)));
     tmp = pop_select(tmp,'nochannel',ndx);
+    data.tabLine.flatline = length(ndx);
 else
     AddToListbox(data.listboxStdout, '- NO channels removed');
+    data.tabLine.flatline = 0;
 end
 
 if data.checkboxFlatlineEpochs.Value
@@ -2054,9 +2073,9 @@ if (tmp.trials==1)
     tmp.data = detrend(tmp.data','constant')';
 end
 try
-    tmp = pop_runica(tmp,'icatype','binica','pca',16);
+    tmp = pop_runica(tmp,'icatype','binica','pca',ifthen(tmp.nbchan<16,tmp.nbchan,16));
 catch E
-    tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',16);
+    tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',ifthen(tmp.nbchan<16,tmp.nbchan,16));
 end
 
 if isempty(tmp.icaact)
@@ -2073,10 +2092,11 @@ icdeselect = (tmp.etc.ic_classification.ICLabel.classifications(:,eyelabel)')'>.
 AddToListbox(data.listboxStdout, sprintf(' Removing %d ICs',sum(icdeselect)));
 if sum(icdeselect)>0
     AddToListbox(data.listboxStdout, sprintf(' - Remove %d eye ICs',sum(icdeselect)));
-    fprintf(' - Remove %d eye ICs\n',sum(icdeselect));
+    fprintf(' - Remove %d eye ICs using subtraction method\n',sum(icdeselect));
     % use the source subtraction method to remove ICs, NOT the pop_select
     % method that reduces the dimensionality of the data.
     tmp.data(:,:) = tmp.data(:,:) - tmp.icawinv(:,icdeselect)*tmp.icaact(icdeselect,:);
+    data.tabLine.removeEOG = sum(icdeselect);
 end
 
 % push existing data onto stack. Update <data.EEG> to tmp.
@@ -2131,11 +2151,12 @@ EYE = filter_fir(tmp.data(eogndx,:), tmp.srate, 0, 20, 3.0, true);
 ICs = filter_fir(tmp.icaact(:,:), tmp.srate, 0, 20, 3.0, true);
 R = abs(corr(EYE',ICs'));
 icdeselect = any(R>.66,1);
-AddToListbox(data.listboxStdout, sprintf('- Removing %d ICs',sum(icdeselect)));
+AddToListbox(data.listboxStdout, sprintf('- Removing %d ICs with subtraction method',sum(icdeselect)));
 if sum(icdeselect)>0
     % use the source subtraction method to remove ICs, NOT the pop_select
     % method that reduces the dimensionality of the data.
     tmp.data = tmp.data - tmp.icawinv(:,icdeselect)*tmp.icaact(icdeselect,:);
+    data.tabLine.removeEOG = sum(icdeselect);
 end
 
 % push existing data onto stack. Update <data.EEG> to tmp.
@@ -2176,6 +2197,10 @@ data.Stack{length(data.Stack)+1} = data.EEG;
 data.StackLabel{length(data.Stack)+1} = 'Clean';
 data.EEG = tmp;
 guidata(hObject, data);
+
+% add info to the table.
+data.tabLine.cleanDeletedTime = sum(mean((data.EEG.data(:,:)-tmp.data(:,:)).^2)>.1) / data.EEG.srate;
+
 
 set(hObject,'backgroundcolor',[.9 .8 .6])
 set(data.pushbuttonICLabel, 'backgroundcolor', [.6 1 .6]);
@@ -2746,8 +2771,10 @@ ndx = find(Z > crit);
 if ~isempty(ndx)
     AddToListbox(data.listboxStdout, sprintf('- Removing %d channels ', length(ndx)));
     tmp = pop_select(tmp,'nochannel',ndx);
+    data.tabLine.excessive = length(ndx);
 else
     AddToListbox(data.listboxStdout, '- NO channels removed');
+    data.TabLine.excessive = 0;
 end
 
 % push existing data onto stack. Update <data.EEG> to tmp.
@@ -2933,94 +2960,223 @@ guidata(hObject, data);
 
 
 
-% --- Executes on button press in pbBatch.
+% --- Executes on button press in pbBatch. -------------------------------
 function pbBatch_Callback(hObject, eventdata, handles)
 % hObject    handle to pbBatch (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-h = figRunBatchModal(gcf);
-uiwait(h);
+global skipOverwrite_choice %#ok<GVMIS> 
 
 data = guidata(hObject);
+
+% open the batch modal window to get the settings
+h = figRunBatchModal(gcf, data.INIDIR);
+uiwait(h);
+pause(.05)
+data = guidata(hObject);
+
 if isfield(data,'batchfilenames') &&  ~isempty(data.batchfilenames)
     % loop thourgh files and apply the checked functions
-    for f=1:length(data.batchfilenames)
-        fn = sprintf('%s/%s', data.batchpathname, data.batchfilenames{f});
-        
-        EEG = loadfile(data.batchpathname, data.batchfilenames{f}, data.listboxStdout, data.checkboxBiosig);
-        data.EEG = EEG;
-        guidata(hObject, data);
-        pause(0.01); % allows the upload
-        
-        for cb=data.batchchecked
-            % run this checkbox
-            switch cb
-                case 1
-                    pushbuttonFlatline_Callback(data.pushbuttonFlatline, [], []);
-                    data = guidata(hObject);
-                case 2
-                    pushbuttonExcessive_Callback(data.pushbuttonExcessive, [], []);
-                    data = guidata(hObject);
-                case 3
-                    pushbuttonChanlocs_Callback(data.pushbuttonChanlocs, [], []);
-                    data = guidata(hObject);
-                case 4
-                    pushbuttonResample_Callback(data.pushbuttonResample, [], []);
-                    data = guidata(hObject);
-                case 5
-                    pushbuttonReref_Callback(data.pushbuttonReref, [], []);
-                    data = guidata(hObject);
-                case 6
-                    pushbuttonFilter_Callback(data.pushbuttonFilter, [], []);
-                    data = guidata(hObject);
-                    
-                case 7
-                    pushbuttonInitialICA_Callback(data.pushbuttonInitialICA, [], []);
-                    data = guidata(hObject);
-                case 8
-                    pushbuttonAltInitialEOG_Callback(data.pushbuttonAltInitialEOG, [], []);
-                    data = guidata(hObject);
-                case 9
-                    pushbuttonAARWinSec_Callback(data.pushbuttonAARWinSec, [], []);
-                    data = guidata(hObject);
-                case 10
-                    pushbuttonAltAAR_Callback(data.pushbuttonAltAAR, [], []);
-                    data = guidata(hObject);
+    resultTable = [];
 
-                case 11
-                    pushbuttonRemoveNoEEG_Callback(data.pushbuttonRemoveNoEEG, [], []);
-                    data = guidata(hObject);
-                case 12
-                    pushbuttonFlatPeriod_Callback(data.pushbuttonFlatPeriod, [], []);
-                    data = guidata(hObject);
-                case 13
-                    pushbuttonClean_Callback(data.pushbuttonClean, [], []);
-                    data = guidata(hObject);
-                case 14
-                    pushbuttonICLabel_Callback(data.pushbuttonICLabel, [], []);
-                    data = guidata(hObject);
-                case 15
-                    pushbuttonMaskEvt_Callback(data.pushbuttonICLabel, [], []);
-                    data = guidata(hObject);
-            end
+    % check if any output file exists, then ask to overwrite or skip
+    ex = false;
+    for f=1:length(data.batchfilenames)
+        FNOut = [data.batchpathname '/' sprintf('BatchCln_%s', data.batchfilenames{f})];    
+        [pth,fle,ext] = fileparts(FNOut);
+        FNOut = sprintf('%s/%s.set', pth, fle);
+        if exist(FNOut)
+            ex = true;
+            break
         end
-        
-        % clear the stack
-        data.Stack = {};
-        data.StackLabel = {};
-        guidata(hObject, data);
-        
-        % save the file with prefix batch
-        pop_saveset(data.EEG, 'filename', sprintf('BatchCln_%s', data.batchfilenames{f}), ...
-                              'filepath', data.batchpathname, ...
-                              'savemode', 'onefile')
-        
     end
+    % ask for skip or overwrite
+    if ex
+        skip_or_overwrite_dialog();
+    end
+
+                
+
+    for f=1:length(data.batchfilenames)
+        try
+            % filename for output
+            FNOut = [data.batchpathname '/' sprintf('BatchCln_%s', data.batchfilenames{f})];    
+            [pth,fle,ext] = fileparts(FNOut);
+            FNOut = sprintf('%s/%s.set', pth, fle);
+            % skip if it exists and so requested.
+            if exist(FNOut) && strcmpi(skipOverwrite_choice, 'skip')
+                continue
+            end
+
+        
+            % read the file
+            EEG = loadfile(data.batchpathname, data.batchfilenames{f}, data.listboxStdout, data.checkboxBiosig);
+            data.EEG = EEG;
+            data.tabLine = struct();
+            data.tabLine.starttime = size(data.EEG.data(:,:),2) / data.EEG.srate;
+            guidata(hObject, data);
+            pause(0.01); % allows the upload
+
+            % perform the selected actions in a fixed order with the
+            % settings as specified. 
+            for cb=data.batchchecked
+                % run this checkbox
+                switch cb
+                    case 1
+                        pushbuttonFlatline_Callback(data.pushbuttonFlatline, [], []);
+                        data = guidata(hObject);
+                    case 2
+                        pushbuttonExcessive_Callback(data.pushbuttonExcessive, [], []);
+                        data = guidata(hObject);
+                    case 3
+                        pushbuttonChanlocs_Callback(data.pushbuttonChanlocs, [], []);
+                        data = guidata(hObject);
+                    case 4
+                        pushbuttonResample_Callback(data.pushbuttonResample, [], []);
+                        data = guidata(hObject);
+                    case 5
+                        pushbuttonReref_Callback(data.pushbuttonReref, [], []);
+                        data = guidata(hObject);
+                    case 6
+                        pushbuttonFilter_Callback(data.pushbuttonFilter, [], []);
+                        data = guidata(hObject);
+                        
+                    case 7
+                        pushbuttonInitialICA_Callback(data.pushbuttonInitialICA, [], []);
+                        data = guidata(hObject);
+                    case 8
+                        pushbuttonAltInitialEOG_Callback(data.pushbuttonAltInitialEOG, [], []);
+                        data = guidata(hObject);
+                    case 9
+                        pushbuttonAARWinSec_Callback(data.pushbuttonAARWinSec, [], []);
+                        data = guidata(hObject);
+                    case 10
+                        pushbuttonAltAAR_Callback(data.pushbuttonAltAAR, [], []);
+                        data = guidata(hObject);
+    
+                    % channel remove checkboxes
+                    case 11
+                        pushbuttonRemoveNoEEG_Callback(data.pushbuttonRemoveNoEEG, [], []);
+                        data = guidata(hObject);
+                    case 12
+                        pushbuttonRemoveEOG_Callback(data.pushbuttonRemoveEOG, [], []);
+                        data = guidata(hObject);
+
+                    % remaining cleaning procedures flatline eperiods,
+                    % cleanrawdata and IClabel cleanning
+                    case 13
+                        pushbuttonFlatPeriod_Callback(data.pushbuttonFlatPeriod, [], []);
+                        data = guidata(hObject);
+                    case 14
+                        pushbuttonClean_Callback(data.pushbuttonClean, [], []);
+                        data = guidata(hObject);
+                    case 15
+                        pushbuttonICLabel_Callback(data.pushbuttonICLabel, [], []);
+                        data = guidata(hObject);
+                end
+            end
+            
+            % clear the stack
+            data.Stack = {};
+            data.StackLabel = {};
+            guidata(hObject, data);
+            
+            % save the file with prefix batch
+            pop_saveset(data.EEG, 'filename', sprintf('BatchCln_%s', data.batchfilenames{f}), ...
+                                  'filepath', data.batchpathname, ...
+                                  'savemode', 'onefile')
+            data.tabLine.finaltime = size(data.EEG.data(:,:),2) / data.EEG.srate;
+
+
+            % collect the table output
+            try
+                data.tabLine.filename = data.batchfilenames{f};
+                if isempty(resultTable)
+                    resultTable = data.tabLine;
+                else
+                    resultTable = cat(1, resultTable, data.tabLine);
+                end
+            catch
+            end
+        catch E
+            AddToListbox(data.listboxStdout, '*** Undefined error. Continuing with next file')
+            % AddToListbox(data.listboxStdout, sprintf('- %s', E.message))
+        end
+
+    end
+
+    out = struct2table(resultTable);
+    % append / update any existing file!
+    batchtablefile = sprintf('%s/BatchTable.txt', data.batchpathname);
+    if exist(batchtablefile)
+        update = readtable(batchtablefile);
+        % de the right IDs, idx<table> is correctly sorted
+        [~, idxUpdate, idxOut] = intersect(update.filename, out.filename);
+        
+        try
+            % Step 1: Update matching IDs
+            update(idxUpdate, :) = out(idxOut, :);
+            
+            % Step 2: Find new IDs in T2 not in T1
+            [newOnly, ~] = setdiff(out.filename, update.filename);
+            
+            % Step 3: Append new rows
+            update = [update; out(ismember(out.filename, newOnly), :)];        
+            out = update;
+        catch E
+            warning('Could not match new batch data to existing!')
+        end
+    end
+
+    vars = out.Properties.VariableNames;
+    vars = [{'filename'} setdiff(vars, 'filename')];
+    writetable(out(:,vars), batchtablefile, 'del', '\t');
+
+    system(sprintf('open "%s"', data.batchpathname))
 end
 
 
-% --- Executes on button press in pushbuttonImputeAll.
+
+
+function  skip_or_overwrite_dialog()
+    % Create a UI figure
+    fig = uifigure('Name', 'Action Required', 'Position', [500 500 300 150]);
+
+    % Add text label
+    lbl = uilabel(fig, ...
+        'Text', 'Some output files exists. What would you like to do?', ...
+        'Position', [25 80 250 40], ...
+        'HorizontalAlignment', 'center');
+
+    % Create buttons and define callbacks
+    btnSkip = uibutton(fig, 'push', ...
+        'Text', 'Skip all', ...
+        'Position', [50 30 80 30], ...
+        'ButtonPushedFcn', @(btn,event) buttonCallback(fig, 'skip'));
+
+    btnOverwrite = uibutton(fig, 'push', ...
+        'Text', 'Overwrite', ...
+        'Position', [170 30 80 30], ...
+        'ButtonPushedFcn', @(btn,event) buttonCallback(fig, 'overwrite'));
+
+    % Block program execution until the user closes the figure
+    uiwait(fig);
+
+
+
+
+% Callback function for button actions -----------------------------------
+function buttonCallback(f, choice)
+    global skipOverwrite_choice;
+    skipOverwrite_choice = choice;
+    uiresume(f); % Resume program execution
+    delete(f);   % Close the figure
+
+
+
+
+% --- Executes on button press in pushbuttonImputeAll. -------------------
 function pushbuttonImputeAll_Callback(hObject, eventdata, handles)
 % hObject    handle to pushbuttonImputeAll (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -3211,10 +3367,11 @@ if ~isfield(data, 'figPSD') || isempty(data.figPSD) || ~isstruct(data.figPSD) ||
                          'String', 'Summarize into regions', 'Fontsize', data.fontsize, ...
                          'Units', 'normalized', ...
                          'Position', [0.05, 0.03, 0.4, 0.05], ...
-                         'Callback', @(src, event) checkbox_callback(src, ax, fs, P, chanlocs, data.fontsize+1));
+                         'Callback', @(src, event) checkbox_callback(src, ax, fs, P, chanlocs, data.fontsize+1, lo, hi));
     data.figPSD.fig = fig;
     data.figPSD.ax = ax;
     data.figPSD.checkbox = checkbox;
+    set(ax,'xlim',[0 min(hi,45)])
     
 else
     AddToListbox(data.listboxStdout, '- activating figure');
@@ -3224,7 +3381,7 @@ else
     figure(fig);
 end
 
-checkbox_callback(checkbox, ax, fs, P, chanlocs, data.fontsize+1);
+checkbox_callback(checkbox, ax, fs, P, chanlocs, data.fontsize+1, lo, hi);
 
 guidata(hObject, data);
 
@@ -3242,15 +3399,16 @@ end
 
 
 % Callback function for checkbox
-function checkbox_callback(hObject, ax, fs, P, chanlocs, fontsize)
+function checkbox_callback(hObject, ax, fs, P, chanlocs, fontsize, lo, hi)
 
     % hardcoded limits
-    ndx = fs>=1 & fs<45;  
+    
+    ndx = fs>lo & fs<hi;  
     
     % plot either all channels or a summary
     if get(hObject,'Value')==0
         plot(ax, fs(ndx), 10*log10(P(ndx,:)));
-        
+        legend({chanlocs.labels}, 'location','northeast')
     else
         numlabels = {'theta','radius','X','Y','Z','sph_theta','sph_phi','sph_radius'};
         tab = struct2table(chanlocs);
@@ -3569,3 +3727,30 @@ global GlobEEG
 data.EEG = GlobEEG;
 
 guidata(hObject, data);
+
+
+% --- Executes on button press in pushbuttonRemoveEOG.
+function pushbuttonRemoveEOG_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonRemoveEOG (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+tmp = data.EEG;
+
+ndx = contains({tmp.chanlocs.labels}, 'eog', 'IgnoreCase', true);
+if sum(ndx)
+    tmp = pop_select(tmp, 'nochannel', find(ndx));
+end
+if data.popupmenuReref.Value && strcmpi(data.popupmenuReref.String{data.popupmenuReref.Value}, 'Average')
+    AddToListbox(data.listboxStdout, sprintf('- redo avg reference'))
+    tmp = pop_reref(tmp, []);
+end
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Remove EOG';
+data.EEG = tmp;
+
+guidata(hObject, data)
