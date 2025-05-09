@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 07-May-2025 15:52:40
+% Last Modified by GUIDE v2.5 09-May-2025 15:02:24
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -1472,7 +1472,12 @@ end
 try
     try
         AddToListbox(data.listboxStdout, 'Running ICA.')
-        tmp = pop_runica(tmp,'icatype','binica','pca',ncomps);
+        if data.checkboxJader.Value
+            warning('using the JADER ICA algorithm. Ncomps/ PCA not used')
+            tmp = pop_runica(tmp, 'icatype', 'jader');
+        else
+            tmp = pop_runica(tmp,'icatype','binica','pca',12);
+        end
     catch E
         AddToListbox(data.listboxStdout, 'Running ICA failed. Reverting to slower version.')
         tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',ncomps);
@@ -1864,10 +1869,6 @@ else
     AddToListbox(data.listboxStdout, '- NO channels removed');
     data.tabLine.flatline = 0;
 end
-
-if data.checkboxFlatlineEpochs.Value
-    AddToListbox(data.listboxStdout, '- Remove flatline periods');
-end
     
 
 % push existing data onto stack. Update <data.EEG> to tmp.
@@ -2073,7 +2074,12 @@ if (tmp.trials==1)
     tmp.data = detrend(tmp.data','constant')';
 end
 try
-    tmp = pop_runica(tmp,'icatype','binica','pca',ifthen(tmp.nbchan<16,tmp.nbchan,16));
+    if data.checkboxJader.Value
+        warning('using the JADER ICA algorithm. Ncomps/ PCA not used')
+        tmp = pop_runica(tmp, 'icatype', 'jader');
+    else
+        tmp = pop_runica(tmp,'icatype','binica','pca',12);
+    end
 catch E
     tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',ifthen(tmp.nbchan<16,tmp.nbchan,16));
 end
@@ -2094,7 +2100,9 @@ if sum(icdeselect)>0
     AddToListbox(data.listboxStdout, sprintf(' - Remove %d eye ICs',sum(icdeselect)));
     fprintf(' - Remove %d eye ICs using subtraction method\n',sum(icdeselect));
     % use the source subtraction method to remove ICs, NOT the pop_select
-    % method that reduces the dimensionality of the data.
+    % method that reduces the dimensionality of the data. TESTED for
+    % icawinv*icaact being thebest option to reconstruct the EEG data (but
+    % a small 10-5 to 10-6 error remained!)
     tmp.data(:,:) = tmp.data(:,:) - tmp.icawinv(:,icdeselect)*tmp.icaact(icdeselect,:);
     data.tabLine.removeEOG = sum(icdeselect);
 end
@@ -2105,8 +2113,6 @@ data.StackLabel{length(data.Stack)+1} = 'Initial ICA';
 data.EEG = tmp;
 guidata(hObject, data);
 
-system('rm binica*.sph')
-system('rm binica*.ch')
 
 set(hObject,'backgroundcolor',[.9 .8 .6])
 
@@ -2134,9 +2140,14 @@ if isempty(eogndx)
 end
 
 try
-    tmp = pop_runica(tmp,'icatype','binica','pca',16);
+    if data.checkboxJader.Value
+        warning('using the JADER ICA algorithm. Ncomps/ PCA not used')
+        tmp = pop_runica(tmp, 'icatype', 'jader');
+    else
+        tmp = pop_runica(tmp,'icatype','binica','pca',12);
+    end
 catch E
-    tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',16);
+    tmp = pop_runica(tmp,'icatype','runica','extended',1,'pca',12);
 end
 
 if isempty(tmp.icaact)
@@ -3086,6 +3097,7 @@ if isfield(data,'batchfilenames') &&  ~isempty(data.batchfilenames)
             pop_saveset(data.EEG, 'filename', sprintf('BatchCln_%s', data.batchfilenames{f}), ...
                                   'filepath', data.batchpathname, ...
                                   'savemode', 'onefile')
+
             data.tabLine.finaltime = size(data.EEG.data(:,:),2) / data.EEG.srate;
 
 
@@ -3097,41 +3109,40 @@ if isfield(data,'batchfilenames') &&  ~isempty(data.batchfilenames)
                 else
                     resultTable = cat(1, resultTable, data.tabLine);
                 end
+                
+
+                % Intermediate save: append to output file
+                rowData = struct2cell(data.tabLine);
+                fid = fopen(sprintf('%s/Metadata_Batch.txt', data.batchpathname), 'a');
+                if fid>0
+                    first = true;
+                    for c=1:length(rowData)
+                        if ~first
+                            fprintf(fid, '\t')
+                        end
+                        switch class(rowData{c})
+                            case {'int8','int16','int32','int64','uint8','uint16','uint32','uint64'}
+                                fprintf(fid, '%d', rowData{c});
+                            case 'double'
+                                fprintf(fid, '%.4g', rowData{c});
+                            case 'char'
+                                fprintf(fid, '%s', rowData{c});
+                        end
+                        first = false;
+                    end
+                    fprintf(fid, '\n')
+                end
+                fclose(fid)
             catch
+                warning('collecting metadata for this subject failed.');
             end
+
         catch E
             AddToListbox(data.listboxStdout, '*** Undefined error. Continuing with next file')
             % AddToListbox(data.listboxStdout, sprintf('- %s', E.message))
         end
 
     end
-
-    out = struct2table(resultTable);
-    % append / update any existing file!
-    batchtablefile = sprintf('%s/BatchTable.txt', data.batchpathname);
-    if exist(batchtablefile)
-        update = readtable(batchtablefile);
-        % de the right IDs, idx<table> is correctly sorted
-        [~, idxUpdate, idxOut] = intersect(update.filename, out.filename);
-        
-        try
-            % Step 1: Update matching IDs
-            update(idxUpdate, :) = out(idxOut, :);
-            
-            % Step 2: Find new IDs in T2 not in T1
-            [newOnly, ~] = setdiff(out.filename, update.filename);
-            
-            % Step 3: Append new rows
-            update = [update; out(ismember(out.filename, newOnly), :)];        
-            out = update;
-        catch E
-            warning('Could not match new batch data to existing!')
-        end
-    end
-
-    vars = out.Properties.VariableNames;
-    vars = [{'filename'} setdiff(vars, 'filename')];
-    writetable(out(:,vars), batchtablefile, 'del', '\t');
 
     system(sprintf('open "%s"', data.batchpathname))
 end
@@ -3520,7 +3531,7 @@ EEG = setdiff(EEG,EOG);
 [~,fs, allP] = pfft(tmp.data(EEG,:)', tmp.srate, ones(1,tmp.srate/5), 0);
 zz = log(squeeze(mean(allP(fs>8&fs<=20, :, :)))'); % log is to normalize
 H = nan(size(zz));
-H(:) = zz(:)<-3.5;
+H(:) = zz(:)<-3.0;
 
 
 % len=10; 
@@ -3751,6 +3762,81 @@ end
 % push existing data onto stack. Update <data.EEG> to tmp.
 data.Stack{length(data.Stack)+1} = data.EEG;
 data.StackLabel{length(data.Stack)+1} = 'Remove EOG';
+data.EEG = tmp;
+
+guidata(hObject, data)
+
+
+% --- Executes on button press in checkboxJader.
+function checkboxJader_Callback(hObject, eventdata, handles)
+% hObject    handle to checkboxJader (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: get(hObject,'Value') returns toggle state of checkboxJader
+
+
+% --- Executes on button press in pushbuttonEMGPeriods.
+function pushbuttonEMGPeriods_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonEMGPeriods (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+erro('not implemented yet')
+
+data = guidata(hObject);
+
+tmp = data.EEG;
+
+EOG = FindSetNdx({tmp.chanlocs.labels},'*eog*','match','pattern');
+EEG = find(~cellfun(@isempty, {tmp.chanlocs.X}));
+EEG = setdiff(EEG,EOG);
+
+% get power spectra in chuncks of 200ms so as to get 5, 10, 15 ... Hz power
+% in many epochs each of 1000 ms. 
+cWinSize = tmp.srate;
+cWinSec = cWinSize / tmp.srate;
+
+% perform fft and get 
+[~,fs, allP] = pfft(tmp.data(EEG,:)', tmp.srate, ones(1,tmp.srate), 0);
+betapower = log(squeeze(mean(allP(fs>20 & fs<=35, :, :))))'; % log is to normalize
+Z = (betapower-median(betapower,2))./std(betapower,[],2);
+H = nan(size(betapower));
+H(:) = fdr_bh(pnorm(Z(:)), 0.05);
+
+% get the associated times
+row=0; 
+times=[];
+state=0; 
+for s=1:size(H,1) 
+    if any(H(s,:)) && state==0
+        state = 1; 
+        row = row+1; 
+        times(row,1) = (s-1)*cWinSec - cWinSec; % depends on pfft call
+    elseif ~any(H(s,:)) && state==1
+        state = 0; 
+        times(row,2) = (s-1)*cWinSec + .2; 
+    end
+end
+if state==1 && times(row,2) == 0
+    times(row,2) = tmp.xmax;
+end
+
+% merge lines if period inbetween to-be-removed chunks <1s
+for row=1:size(times,1)-1
+    if times(row+1,1)<=times(row,2)+1
+        times(row+1,1) = times(row+1,1)-1;
+    end
+end
+        
+
+% output result and apply
+AddToListbox(data.listboxStdout, sprintf('- Removing %d periods for EMG', size(times,1)))
+tmp = pop_select(tmp, 'notime', times);
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Clear EMG periods';
 data.EEG = tmp;
 
 guidata(hObject, data)
