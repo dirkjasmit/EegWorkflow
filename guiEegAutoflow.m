@@ -22,7 +22,7 @@ function varargout = guiEegAutoflow(varargin)
 
 % Edit the above text to modify the response to help guiEegAutoflow
 
-% Last Modified by GUIDE v2.5 09-May-2025 15:02:24
+% Last Modified by GUIDE v2.5 10-May-2025 21:21:51
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -3472,12 +3472,19 @@ function pbDFA_Callback(hObject, eventdata, handles)
 data = guidata(hObject);
 tmp = data.EEG;
 
-AddToListbox(data.listboxStdout, 'Plotting DFA of alpha oscillations');
+AddToListbox(data.listboxStdout, 'Plotting DFA of alpha oscillations, EEG channels');
 
-lo = 7.5;
+lo = 7.0;
 hi = 13;
 
-exp = dfa(abs(hilbert(filter_fir(tmp.data(:,:), tmp.srate, lo, hi, 3.0, true)')), tmp.srate);
+% Only take EEG, i.e. channels with a location and not *EOG*
+deselect = contains({tmp.chanlocs.labels}, 'eog', 'ignorecase', true) | ...
+    strcmpi({tmp.chanlocs.labels}, 'A1') | ...
+    strcmpi({tmp.chanlocs.labels}, 'A2') | ...
+    strcmpi({tmp.chanlocs.labels}, 'M1') | ...
+    strcmpi({tmp.chanlocs.labels}, 'M2') | ...
+    isempty([tmp.chanlocs.X]);
+exp = dfa(abs(hilbert(filter_fir(tmp.data(~deselect,:), tmp.srate, lo, hi, 3.0, true)')), tmp.srate);
 
 
 % Create figure if needed, otherwise put the figure in front
@@ -3501,7 +3508,7 @@ end
 
 tmp.nbchan = size(tmp.data,1);
 clf;
-topoplot(exp, tmp.chanlocs, 'maplimits', [.5 .8]);
+topoplot(exp, tmp.chanlocs(~deselect), 'maplimits', [.5 .8]);
 colorbar;
 
 guidata(hObject, data);
@@ -3792,8 +3799,7 @@ EOG = FindSetNdx({tmp.chanlocs.labels},'*eog*','match','pattern');
 EEG = find(~cellfun(@isempty, {tmp.chanlocs.X}));
 EEG = setdiff(EEG,EOG);
 
-% get power spectra in chuncks of 200ms so as to get 5, 10, 15 ... Hz power
-% in many epochs each of 1000 ms. 
+% get power spectra in chuncks of 1000ms so as to get 1 2 3 ... Hz power 
 cWinSize = tmp.srate;
 cWinSec = cWinSize / tmp.srate;
 
@@ -3837,6 +3843,77 @@ tmp = pop_select(tmp, 'notime', times);
 % push existing data onto stack. Update <data.EEG> to tmp.
 data.Stack{length(data.Stack)+1} = data.EEG;
 data.StackLabel{length(data.Stack)+1} = 'Clear EMG periods';
+data.EEG = tmp;
+
+guidata(hObject, data)
+
+
+% --- Executes on button press in pushbuttonSleepTheta.
+function pushbuttonSleepTheta_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonSleepTheta (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+data = guidata(hObject);
+
+AddToListbox(data.listboxStdout, 'Removing excessive theta periods indicating sleep')
+
+tmp = data.EEG;
+
+% get power spectra in chunks of 2000ms so as to get .5 1 1.5 2, ... Hz power 
+cWinSize = tmp.srate*2;
+cWinSec = cWinSize / tmp.srate;
+cWinSecMove = cWinSec / 2;
+
+EOG = FindSetNdx({tmp.chanlocs.labels},'*eog*','match','pattern');
+EEG = find(~cellfun(@isempty, {tmp.chanlocs.X}));
+EEG = setdiff(EEG,EOG);
+
+% get power spectra in chuncks of 200ms so as to get 5, 10, 15 ... Hz power
+% in many epochs each of 200 ms. 
+
+[~,fs, allP] = pfft(tmp.data(EEG,:)', tmp.srate, ones(1, cWinSize), .5);
+Th = mean(log(squeeze(mean(allP(fs>3&fs<=6, :, :)))'), 2); % log is to normalize
+Al = mean(log(squeeze(mean(allP(fs>7&fs<=13, :, :)))'), 2); % log is to normalize
+H = nan(size(Th));
+H(:) = (Th(:)./Al(:))>4.0;
+% determine start and end times of all the epochs. Note the .5voverlap in
+% the pfft call!
+starts = 0:cWinSecMove:tmp.xmax;
+
+% collect the data
+row=0; 
+times=[];
+state=0; 
+for s=1:length(H) 
+    if H(s) && state==0
+        state = 1; 
+        row = row+1; 
+        times(row,1) = starts(s); % fixed! .2 depends on pfft call! 
+    elseif ~H(s) && state==1
+        state = 0; 
+        times(row,2) = starts(s); 
+    end
+end
+if state==1 && times(row,2) == 0
+    times(row,2) = tmp.xmax;
+end
+
+% merge lines if period inbetween to-be-removed chunks <1s
+for row=1:size(times,1)-1
+    if times(row+1,1)<=times(row,2)+1
+        times(row+1,1) = times(row+1,1)-1;
+    end
+end
+        
+
+% output result and apply
+AddToListbox(data.listboxStdout, sprintf('- Removing %d periods', size(times,1)))
+tmp = pop_select(tmp, 'notime', times);
+
+% push existing data onto stack. Update <data.EEG> to tmp.
+data.Stack{length(data.Stack)+1} = data.EEG;
+data.StackLabel{length(data.Stack)+1} = 'Clear flatline periods';
 data.EEG = tmp;
 
 guidata(hObject, data)
